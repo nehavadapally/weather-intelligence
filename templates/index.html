@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
   <title>NWS Weather Intelligence</title>
+
   <style>
     :root {
       --bg: #f4f6fb;
@@ -20,19 +26,29 @@
       --forecast-soft: #f0f9ff;
       --success: #166534;
       --success-soft: #f0fdf4;
+      --warning: #92400e;
+      --warning-soft: #fffbeb;
       --danger: #b91c1c;
       --radius: 10px;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
-      max-width: 860px;
+      max-width: 980px;
       margin: 48px auto;
       padding: 0 20px 48px;
       color: var(--text);
       background: var(--bg);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
     }
 
     h1 {
@@ -48,6 +64,10 @@
     h3 {
       margin: 0;
       font-size: 15px;
+    }
+
+    code {
+      font-size: 12px;
     }
 
     .hint {
@@ -87,8 +107,13 @@
       background: transparent;
     }
 
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
 
     .card {
       margin-top: 24px;
@@ -96,19 +121,25 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--card-bg);
-      box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04);
+      box-shadow:
+        0 1px 3px rgba(16, 24, 40, 0.04);
     }
 
     .form-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 140px;
+      grid-template-columns:
+        minmax(0, 1fr)
+        140px;
       gap: 14px;
       align-items: end;
     }
 
     .search-filters {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 170px 120px;
+      grid-template-columns:
+        minmax(0, 1fr)
+        180px
+        120px;
       gap: 14px;
       margin-top: 14px;
     }
@@ -120,7 +151,9 @@
       font-weight: 650;
     }
 
-    input, select, button {
+    input,
+    select,
+    button {
       width: 100%;
       min-height: 42px;
       padding: 10px 12px;
@@ -129,10 +162,12 @@
       font: inherit;
     }
 
-    input:focus, select:focus {
+    input:focus,
+    select:focus {
       outline: none;
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13);
+      box-shadow:
+        0 0 0 3px rgba(37, 99, 235, 0.13);
     }
 
     button {
@@ -144,22 +179,13 @@
       cursor: pointer;
     }
 
-    button:hover { background: var(--accent-hover); }
-    button:disabled { opacity: 0.55; cursor: wait; }
-
-    .secondary-button {
-      width: auto;
-      min-height: 34px;
-      padding: 7px 11px;
-      border: 1px solid var(--accent);
-      color: var(--accent);
-      background: white;
-      font-size: 12px;
+    button:hover {
+      background: var(--accent-hover);
     }
 
-    .secondary-button:hover {
-      color: white;
-      background: var(--accent);
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
     }
 
     .status {
@@ -171,17 +197,37 @@
       line-height: 1.5;
     }
 
-    .status.visible { display: block; }
-    .status.info { color: #1e3a8a; background: var(--accent-soft); }
-    .status.success { color: var(--success); background: var(--success-soft); }
-    .status.error { color: var(--danger); background: #fef2f2; }
+    .status.visible {
+      display: block;
+    }
+
+    .status.info {
+      color: #1e3a8a;
+      background: var(--accent-soft);
+    }
+
+    .status.success {
+      color: var(--success);
+      background: var(--success-soft);
+    }
+
+    .status.warning {
+      color: var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .status.error {
+      color: var(--danger);
+      background: var(--alert-soft);
+    }
 
     table {
       width: 100%;
       border-collapse: collapse;
     }
 
-    th, td {
+    th,
+    td {
       padding: 11px 8px;
       border-bottom: 1px solid var(--border);
       text-align: left;
@@ -197,8 +243,13 @@
       text-transform: uppercase;
     }
 
-    tbody tr:hover { background: #fafbfe; }
-    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover {
+      background: #fafbfe;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
 
     .empty-row td {
       padding: 26px 8px;
@@ -206,12 +257,57 @@
       text-align: center;
     }
 
-    .location-name { font-weight: 650; }
-    .subtle { color: var(--muted); font-size: 12px; }
+    .location-name {
+      font-weight: 650;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .action-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .action-buttons button {
+      width: auto;
+      min-height: 32px;
+      margin: 0;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .search-button,
+    .sync-button {
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      background: white;
+    }
+
+    .search-button:hover,
+    .sync-button:hover {
+      color: white;
+      background: var(--accent);
+    }
+
+    .delete-button {
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      background: white;
+    }
+
+    .delete-button:hover {
+      color: white;
+      background: var(--danger);
+    }
 
     .checkbox-row {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 8px;
       margin-top: 16px;
     }
@@ -219,11 +315,20 @@
     .checkbox-row input {
       width: auto;
       min-height: auto;
+      margin-top: 3px;
     }
 
     .checkbox-row label {
       margin: 0;
       font-weight: 500;
+    }
+
+    .checkbox-help {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
     }
 
     .results-header {
@@ -238,7 +343,9 @@
       border-top: 1px solid var(--border);
     }
 
-    .result-card:first-child { border-top: 0; }
+    .result-card:first-child {
+      border-top: 0;
+    }
 
     .result-heading {
       display: flex;
@@ -274,78 +381,151 @@
       font-weight: 700;
     }
 
-    .badge.alert { color: var(--alert); background: var(--alert-soft); }
-    .badge.forecast { color: var(--forecast); background: var(--forecast-soft); }
-    .badge.score { color: #3730a3; background: #eef2ff; }
+    .badge.alert {
+      color: var(--alert);
+      background: var(--alert-soft);
+    }
 
-    .summary {
+    .badge.forecast {
+      color: var(--forecast);
+      background: var(--forecast-soft);
+    }
+
+    .badge.score {
+      color: #3730a3;
+      background: #eef2ff;
+    }
+
+    .summary-box {
       margin-top: 18px;
       padding: 14px;
-      border: 1px solid #bfdbfe;
       border-radius: 8px;
-      background: var(--accent-soft);
       font-size: 13px;
       line-height: 1.55;
     }
 
-    .summary strong {
-      display: block;
-      margin-bottom: 5px;
-      color: #1d4ed8;
+    .summary-box.generated {
+      border: 1px solid #bfdbfe;
+      color: #1e3a8a;
+      background: var(--accent-soft);
     }
 
-    @media (max-width: 720px) {
-      body { margin-top: 28px; }
-      .form-grid, .search-filters { grid-template-columns: 1fr; }
-      .tabs { overflow-x: auto; }
-      .tab-button { white-space: nowrap; }
-      .table-wrap { overflow-x: auto; }
+    .summary-box.unavailable,
+    .summary-box.failed,
+    .summary-box.no-results {
+      border: 1px solid #fde68a;
+      color: var(--warning);
+      background: var(--warning-soft);
+    }
+
+    .summary-box strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        margin-top: 28px;
+      }
+
+      .form-grid,
+      .search-filters {
+        grid-template-columns: 1fr;
+      }
+
+      .tabs {
+        overflow-x: auto;
+      }
+
+      .tab-button {
+        white-space: nowrap;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      .result-heading {
+        display: block;
+      }
+
+      .badges {
+        margin-top: 8px;
+      }
     }
   </style>
 </head>
+
 <body>
   <h1>NWS Weather Intelligence</h1>
+
   <p class="hint">
     Track US locations, ingest National Weather Service alerts and forecasts,
     and search the resulting text with Lakebase pgvector.
   </p>
 
-  <nav class="tabs" aria-label="Weather application sections">
-    <button class="tab-button active" data-tab="locations" type="button">
+  <nav
+    class="tabs"
+    aria-label="Weather application sections"
+  >
+    <button
+      class="tab-button active"
+      data-tab="locations"
+      type="button"
+    >
       My Locations
     </button>
-    <button class="tab-button" data-tab="search" type="button">
+
+    <button
+      class="tab-button"
+      data-tab="search"
+      type="button"
+    >
       Vector Search
     </button>
   </nav>
 
-  <section id="locations-tab" class="tab-content active">
+  <section
+    id="locations-tab"
+    class="tab-content active"
+  >
     <div class="card">
       <h2>Add and sync a US location</h2>
+
       <p class="hint">
-        Enter a location in the required <strong>City, ST</strong> format. Choose a suggestion such as
-        <strong>New York, NY</strong> to avoid a separate geocoder request.
+        Enter a location in the required
+        <strong>City, ST</strong> format.
+        Choose a suggestion such as
+        <strong>New York, NY</strong>.
       </p>
 
       <form id="location-form">
         <div class="form-grid">
           <div>
-            <label for="location-input">US city and state (required format: City, ST)</label>
+            <label for="location-input">
+              US city and state
+              (required format: City, ST)
+            </label>
+
             <input
               id="location-input"
               list="location-options"
               type="text"
               placeholder="New York, NY"
               autocomplete="off"
-              pattern="^[A-Za-z .\'-]+,\s*[A-Za-z]{2}$"
+              pattern="^[A-Za-z .'-]+,\s*[A-Za-z]{2}$"
               title="Enter a US location in City, ST format, for example New York, NY"
               required
             >
+
             <datalist id="location-options"></datalist>
           </div>
 
           <div>
-            <label for="document-limit">Document limit</label>
+            <label for="document-limit">
+              Document limit
+            </label>
+
             <input
               id="document-limit"
               type="number"
@@ -357,19 +537,28 @@
           </div>
         </div>
 
-        <button id="location-submit" type="submit">
+        <button
+          id="location-submit"
+          type="submit"
+        >
           Add and sync location
         </button>
       </form>
 
-      <div id="location-status" class="status" role="status"></div>
+      <div
+        id="location-status"
+        class="status"
+        role="status"
+      ></div>
     </div>
 
     <div class="card">
       <h2>My weather locations</h2>
+
       <p class="hint">
-        This list is derived from the locations already stored in
-        <code>weather_documents</code>, so it remains after a refresh.
+        Sync refreshes the raw NWS documents. Run the embedding notebook
+        afterwards to update vector-search results. Delete removes both raw
+        documents and their existing vector embeddings.
       </p>
 
       <div class="table-wrap">
@@ -381,25 +570,36 @@
               <th>Forecasts</th>
               <th>Documents</th>
               <th>Last synced</th>
-              <th></th>
+              <th>Actions</th>
             </tr>
           </thead>
+
           <tbody id="locations-body"></tbody>
         </table>
       </div>
     </div>
   </section>
 
-  <section id="search-tab" class="tab-content">
+  <section
+    id="search-tab"
+    class="tab-content"
+  >
     <div class="card">
-      <h2>Search weather alerts and forecasts</h2>
+      <h2>
+        Search weather alerts and forecasts
+      </h2>
+
       <p class="hint">
-        Enter a natural-language question to retrieve the most relevant
-        weather passages. Run the embedding notebook after syncing new data.
+        Enter a natural-language question to retrieve relevant weather
+        passages. New or updated documents become searchable after the
+        embedding notebook is run.
       </p>
 
       <form id="search-form">
-        <label for="search-query">Weather question</label>
+        <label for="search-query">
+          Weather question
+        </label>
+
         <input
           id="search-query"
           type="text"
@@ -409,70 +609,153 @@
 
         <div class="search-filters">
           <div>
-            <label for="search-location">Location</label>
+            <label for="search-location">
+              Location
+            </label>
+
             <select id="search-location">
-              <option value="">All stored locations</option>
+              <option value="">
+                All stored locations
+              </option>
             </select>
           </div>
 
           <div>
-            <label for="source-type">Source type</label>
+            <label for="source-type">
+              Source type
+            </label>
+
             <select id="source-type">
-              <option value="">Alerts and forecasts</option>
-              <option value="alert">Alerts only</option>
-              <option value="forecast">Forecasts only</option>
+              <option value="">
+                Alerts and forecasts
+              </option>
+
+              <option value="alert">
+                Alerts only
+              </option>
+
+              <option value="forecast">
+                Forecasts only
+              </option>
             </select>
           </div>
 
           <div>
-            <label for="top-k">Results</label>
-            <input id="top-k" type="number" min="1" max="20" value="5">
+            <label for="top-k">
+              Results
+            </label>
+
+            <input
+              id="top-k"
+              type="number"
+              min="1"
+              max="20"
+              value="5"
+            >
           </div>
         </div>
 
         <div class="checkbox-row">
-          <input id="summarize" type="checkbox">
+          <input
+            id="summarize"
+            type="checkbox"
+          >
+
           <label for="summarize">
-            Include optional AI summary
+            Include AI-generated summary
+
+            <span class="checkbox-help">
+              Requires a configured Databricks Model Serving endpoint.
+              Search results still work without it.
+            </span>
           </label>
         </div>
 
-        <button id="search-submit" type="submit">
+        <button
+          id="search-submit"
+          type="submit"
+        >
           Search weather documents
         </button>
       </form>
 
-      <div id="search-status" class="status" role="status"></div>
-      <div id="summary"></div>
-      <div id="results-header" class="results-header"></div>
+      <div
+        id="search-status"
+        class="status"
+        role="status"
+      ></div>
+
+      <div id="summary-container"></div>
+
+      <div
+        id="results-header"
+        class="results-header"
+      ></div>
+
       <div id="search-results"></div>
     </div>
   </section>
 
   <script>
-    const tabButtons = [...document.querySelectorAll(".tab-button")];
-    const tabContents = [...document.querySelectorAll(".tab-content")];
+    const tabButtons = [
+      ...document.querySelectorAll(".tab-button")
+    ];
 
-    const locationForm = document.getElementById("location-form");
-    const locationInput = document.getElementById("location-input");
-    const locationSubmit = document.getElementById("location-submit");
-    const locationStatus = document.getElementById("location-status");
-    const locationsBody = document.getElementById("locations-body");
-    const locationOptions = document.getElementById("location-options");
+    const tabContents = [
+      ...document.querySelectorAll(".tab-content")
+    ];
 
-    const searchForm = document.getElementById("search-form");
-    const searchQuery = document.getElementById("search-query");
-    const searchLocation = document.getElementById("search-location");
-    const searchSubmit = document.getElementById("search-submit");
-    const searchStatus = document.getElementById("search-status");
-    const resultsHeader = document.getElementById("results-header");
-    const searchResults = document.getElementById("search-results");
-    const summary = document.getElementById("summary");
+    const locationForm =
+      document.getElementById("location-form");
+
+    const locationInput =
+      document.getElementById("location-input");
+
+    const locationSubmit =
+      document.getElementById("location-submit");
+
+    const locationStatus =
+      document.getElementById("location-status");
+
+    const locationsBody =
+      document.getElementById("locations-body");
+
+    const locationOptions =
+      document.getElementById("location-options");
+
+    const searchForm =
+      document.getElementById("search-form");
+
+    const searchQuery =
+      document.getElementById("search-query");
+
+    const searchLocation =
+      document.getElementById("search-location");
+
+    const searchSubmit =
+      document.getElementById("search-submit");
+
+    const searchStatus =
+      document.getElementById("search-status");
+
+    const resultsHeader =
+      document.getElementById("results-header");
+
+    const searchResults =
+      document.getElementById("search-results");
+
+    const summaryContainer =
+      document.getElementById("summary-container");
+
 
     function activateTab(tabName) {
       tabButtons.forEach((button) => {
-        button.classList.toggle("active", button.dataset.tab === tabName);
+        button.classList.toggle(
+          "active",
+          button.dataset.tab === tabName
+        );
       });
+
       tabContents.forEach((content) => {
         content.classList.toggle(
           "active",
@@ -481,90 +764,381 @@
       });
     }
 
+
     tabButtons.forEach((button) => {
-      button.addEventListener("click", () => activateTab(button.dataset.tab));
+      button.addEventListener("click", () => {
+        activateTab(button.dataset.tab);
+      });
     });
 
-    function showStatus(element, message, type = "info") {
+
+    function showStatus(
+      element,
+      message,
+      type = "info"
+    ) {
       element.textContent = message;
-      element.className = `status visible ${type}`;
+      element.className =
+        `status visible ${type}`;
     }
+
 
     function clearStatus(element) {
       element.textContent = "";
       element.className = "status";
     }
 
+
     function formatDate(value) {
-      return value ? new Date(value).toLocaleString() : "-";
+      return value
+        ? new Date(value).toLocaleString()
+        : "-";
     }
+
+
+    function clearSearchOutput() {
+      searchResults.replaceChildren();
+      summaryContainer.replaceChildren();
+
+      resultsHeader.textContent = "";
+      resultsHeader.style.display = "none";
+
+      clearStatus(searchStatus);
+    }
+
 
     async function loadLocationOptions() {
       try {
-        const response = await fetch("/weather/location-options");
+        const response = await fetch(
+          "/weather/location-options"
+        );
+
         const data = await response.json();
-        if (!response.ok) return;
+
+        if (!response.ok) {
+          return;
+        }
 
         locationOptions.replaceChildren();
+
         data.forEach((item) => {
-          const option = document.createElement("option");
+          const option =
+            document.createElement("option");
+
           option.value = item.name;
           locationOptions.append(option);
         });
       } catch (error) {
-        console.warn("Location suggestions could not be loaded", error);
+        console.warn(
+          "Location suggestions could not be loaded",
+          error
+        );
       }
     }
 
-    function appendLocationOption(select, row) {
-      const option = document.createElement("option");
+
+    function appendLocationOption(
+      select,
+      row
+    ) {
+      const option =
+        document.createElement("option");
+
       option.value = row.location;
       option.textContent = row.location;
+
       select.append(option);
     }
 
-    function buildLocationRow(row) {
-      const tr = document.createElement("tr");
 
-      const locationCell = document.createElement("td");
-      const name = document.createElement("div");
+    async function syncStoredLocation(
+      location,
+      button
+    ) {
+      const limit = Number(
+        document
+          .getElementById("document-limit")
+          .value
+      ) || 50;
+
+      button.disabled = true;
+
+      showStatus(
+        locationStatus,
+        `Syncing updated weather documents for ${location}...`,
+        "info"
+      );
+
+      try {
+        const response = await fetch(
+          "/weather/sync",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              locations: [location],
+              limit
+            })
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            `Sync request failed (${response.status})`
+          );
+        }
+
+        if (
+          data.errors &&
+          data.errors.length
+        ) {
+          throw new Error(
+            data.errors
+              .map((item) => item.error)
+              .join(" ")
+          );
+        }
+
+        showStatus(
+          locationStatus,
+          (
+            `Checked ${data.unique_documents || 0} weather documents ` +
+            `for ${location}. ${data.synced || 0} rows were inserted ` +
+            `or updated. Run the embedding notebook to update vector search.`
+          ),
+          "success"
+        );
+
+        await loadLocations();
+      } catch (error) {
+        showStatus(
+          locationStatus,
+          `Could not sync ${location}: ${error}`,
+          "error"
+        );
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+
+    async function deleteStoredLocation(
+      location,
+      button
+    ) {
+      const confirmed = window.confirm(
+        (
+          `Delete ${location}?\n\n` +
+          `This permanently removes its weather documents and all ` +
+          `related vector-search embeddings.`
+        )
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      button.disabled = true;
+
+      showStatus(
+        locationStatus,
+        (
+          `Deleting weather documents and vector-search records ` +
+          `for ${location}...`
+        ),
+        "info"
+      );
+
+      try {
+        const response = await fetch(
+          (
+            `/weather/locations/` +
+            `${encodeURIComponent(location)}`
+          ),
+          {
+            method: "DELETE"
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            `Delete request failed (${response.status})`
+          );
+        }
+
+        showStatus(
+          locationStatus,
+          data.message,
+          "success"
+        );
+
+        if (
+          searchLocation.value === location
+        ) {
+          searchLocation.value = "";
+        }
+
+        clearSearchOutput();
+        await loadLocations();
+      } catch (error) {
+        showStatus(
+          locationStatus,
+          `Could not delete ${location}: ${error}`,
+          "error"
+        );
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+
+    function buildLocationRow(row) {
+      const tr =
+        document.createElement("tr");
+
+      const locationCell =
+        document.createElement("td");
+
+      const name =
+        document.createElement("div");
+
       name.className = "location-name";
       name.textContent = row.location;
-      const coordinates = document.createElement("div");
+
+      const coordinates =
+        document.createElement("div");
+
       coordinates.className = "subtle";
+
       coordinates.textContent = (
-        row.latitude !== null && row.longitude !== null
-          ? `${Number(row.latitude).toFixed(4)}, ${Number(row.longitude).toFixed(4)}`
+        row.latitude !== null &&
+        row.longitude !== null
+          ? (
+              `${Number(row.latitude).toFixed(4)}, ` +
+              `${Number(row.longitude).toFixed(4)}`
+            )
           : "Coordinates unavailable"
       );
-      locationCell.append(name, coordinates);
 
-      const alertCell = document.createElement("td");
-      alertCell.textContent = row.alert_count ?? 0;
+      locationCell.append(
+        name,
+        coordinates
+      );
 
-      const forecastCell = document.createElement("td");
-      forecastCell.textContent = row.forecast_count ?? 0;
+      const alertCell =
+        document.createElement("td");
 
-      const documentCell = document.createElement("td");
-      documentCell.textContent = row.document_count ?? 0;
+      alertCell.textContent =
+        row.alert_count ?? 0;
 
-      const syncedCell = document.createElement("td");
-      syncedCell.textContent = formatDate(row.last_synced_at);
+      const forecastCell =
+        document.createElement("td");
 
-      const actionCell = document.createElement("td");
-      const searchButton = document.createElement("button");
+      forecastCell.textContent =
+        row.forecast_count ?? 0;
+
+      const documentCell =
+        document.createElement("td");
+
+      documentCell.textContent =
+        row.document_count ?? 0;
+
+      const syncedCell =
+        document.createElement("td");
+
+      syncedCell.textContent =
+        formatDate(row.last_synced_at);
+
+      const actionCell =
+        document.createElement("td");
+
+      const actionButtons =
+        document.createElement("div");
+
+      actionButtons.className =
+        "action-buttons";
+
+      const searchButton =
+        document.createElement("button");
+
       searchButton.type = "button";
-      searchButton.className = "secondary-button";
-      searchButton.textContent = "Search";
-      searchButton.addEventListener("click", () => {
-        activateTab("search");
-        searchLocation.value = row.location;
-        if (!searchQuery.value.trim()) {
-          searchQuery.value = "latest weather updates and risks";
+      searchButton.className =
+        "search-button";
+      searchButton.textContent =
+        "Search";
+
+      searchButton.addEventListener(
+        "click",
+        () => {
+          activateTab("search");
+
+          searchLocation.value =
+            row.location;
+
+          if (!searchQuery.value.trim()) {
+            searchQuery.value =
+              "latest weather updates and risks";
+          }
+
+          searchQuery.focus();
         }
-        searchQuery.focus();
-      });
-      actionCell.append(searchButton);
+      );
+
+      const syncButton =
+        document.createElement("button");
+
+      syncButton.type = "button";
+      syncButton.className =
+        "sync-button";
+      syncButton.textContent =
+        "Sync";
+
+      syncButton.addEventListener(
+        "click",
+        () => {
+          syncStoredLocation(
+            row.location,
+            syncButton
+          );
+        }
+      );
+
+      const deleteButton =
+        document.createElement("button");
+
+      deleteButton.type = "button";
+      deleteButton.className =
+        "delete-button";
+      deleteButton.textContent =
+        "Delete";
+
+      deleteButton.addEventListener(
+        "click",
+        () => {
+          deleteStoredLocation(
+            row.location,
+            deleteButton
+          );
+        }
+      );
+
+      actionButtons.append(
+        searchButton,
+        syncButton,
+        deleteButton
+      );
+
+      actionCell.append(
+        actionButtons
+      );
 
       tr.append(
         locationCell,
@@ -574,220 +1148,452 @@
         syncedCell,
         actionCell
       );
+
       return tr;
     }
+
 
     async function loadLocations() {
       locationsBody.replaceChildren();
 
       try {
-        const response = await fetch("/weather/locations");
-        const data = await response.json();
+        const response = await fetch(
+          "/weather/locations"
+        );
+
+        const data =
+          await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || `Request failed (${response.status})`);
+          throw new Error(
+            data.error ||
+            `Request failed (${response.status})`
+          );
         }
 
+        const previousSelection =
+          searchLocation.value;
+
         searchLocation.replaceChildren();
-        const allOption = document.createElement("option");
+
+        const allOption =
+          document.createElement("option");
+
         allOption.value = "";
-        allOption.textContent = "All stored locations";
-        searchLocation.append(allOption);
+        allOption.textContent =
+          "All stored locations";
+
+        searchLocation.append(
+          allOption
+        );
 
         if (!data.length) {
-          const tr = document.createElement("tr");
+          const tr =
+            document.createElement("tr");
+
           tr.className = "empty-row";
-          const td = document.createElement("td");
+
+          const td =
+            document.createElement("td");
+
           td.colSpan = 6;
           td.textContent = (
-            "No locations have been synced yet. Add a US city above."
+            "No locations have been synced yet. " +
+            "Add a US city above."
           );
+
           tr.append(td);
           locationsBody.append(tr);
+
           return;
         }
 
         data.forEach((row) => {
-          locationsBody.append(buildLocationRow(row));
-          appendLocationOption(searchLocation, row);
+          locationsBody.append(
+            buildLocationRow(row)
+          );
+
+          appendLocationOption(
+            searchLocation,
+            row
+          );
         });
+
+        const selectionStillExists = data.some(
+          (row) =>
+            row.location === previousSelection
+        );
+
+        if (selectionStillExists) {
+          searchLocation.value =
+            previousSelection;
+        }
       } catch (error) {
-        const tr = document.createElement("tr");
+        const tr =
+          document.createElement("tr");
+
         tr.className = "empty-row";
-        const td = document.createElement("td");
+
+        const td =
+          document.createElement("td");
+
         td.colSpan = 6;
-        td.textContent = `Could not load locations: ${error}`;
+        td.textContent =
+          `Could not load locations: ${error}`;
+
         tr.append(td);
         locationsBody.append(tr);
       }
     }
 
-    locationForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
 
-      const location = locationInput.value.trim();
-      const limit = Number(
-        document.getElementById("document-limit").value
-      );
+    locationForm.addEventListener(
+      "submit",
+      async (event) => {
+        event.preventDefault();
 
-      if (!location.includes(",")) {
-        showStatus(
-          locationStatus,
-          "Enter a US location in City, ST format, for example New York, NY.",
-          "error"
+        const location =
+          locationInput.value.trim();
+
+        const limit = Number(
+          document
+            .getElementById("document-limit")
+            .value
         );
-        return;
-      }
 
-      locationSubmit.disabled = true;
-      showStatus(locationStatus, `Syncing ${location}...`, "info");
+        if (!location.includes(",")) {
+          showStatus(
+            locationStatus,
+            (
+              "Enter a US location in City, ST format, " +
+              "for example New York, NY."
+            ),
+            "error"
+          );
 
-      try {
-        const response = await fetch("/weather/sync", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            locations: [location],
-            limit
-          })
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || `Request failed (${response.status})`);
+          return;
         }
 
-        if (data.errors && data.errors.length) {
-          throw new Error(data.errors.map((item) => item.error).join(" "));
-        }
+        locationSubmit.disabled = true;
 
         showStatus(
           locationStatus,
-          (
-            `Checked ${data.unique_documents || 0} documents for ${location}. ` +
-            `${data.synced || 0} rows were inserted or updated.`
-          ),
-          "success"
+          `Syncing ${location}...`,
+          "info"
         );
 
-        locationInput.value = "";
-        await loadLocations();
-      } catch (error) {
-        showStatus(locationStatus, String(error), "error");
-      } finally {
-        locationSubmit.disabled = false;
+        try {
+          const response = await fetch(
+            "/weather/sync",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                locations: [location],
+                limit
+              })
+            }
+          );
+
+          const data =
+            await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error ||
+              `Request failed (${response.status})`
+            );
+          }
+
+          if (
+            data.errors &&
+            data.errors.length
+          ) {
+            throw new Error(
+              data.errors
+                .map((item) => item.error)
+                .join(" ")
+            );
+          }
+
+          showStatus(
+            locationStatus,
+            (
+              `Checked ${data.unique_documents || 0} documents for ` +
+              `${location}. ${data.synced || 0} rows were inserted or ` +
+              `updated. Run the embedding notebook before vector search.`
+            ),
+            "success"
+          );
+
+          locationInput.value = "";
+          await loadLocations();
+        } catch (error) {
+          showStatus(
+            locationStatus,
+            String(error),
+            "error"
+          );
+        } finally {
+          locationSubmit.disabled = false;
+        }
       }
-    });
+    );
+
 
     function buildResultCard(item) {
-      const article = document.createElement("article");
-      article.className = "result-card";
+      const article =
+        document.createElement("article");
 
-      const heading = document.createElement("div");
-      heading.className = "result-heading";
+      article.className =
+        "result-card";
 
-      const title = document.createElement("h3");
-      title.textContent = item.headline || "Weather update";
+      const heading =
+        document.createElement("div");
 
-      const badges = document.createElement("div");
+      heading.className =
+        "result-heading";
+
+      const title =
+        document.createElement("h3");
+
+      title.textContent =
+        item.headline ||
+        "Weather update";
+
+      const badges =
+        document.createElement("div");
+
       badges.className = "badges";
 
-      const sourceBadge = document.createElement("span");
-      sourceBadge.className = `badge ${item.source_type || "forecast"}`;
-      sourceBadge.textContent = item.source_type || "weather";
+      const sourceBadge =
+        document.createElement("span");
 
-      const scoreBadge = document.createElement("span");
-      scoreBadge.className = "badge score";
+      sourceBadge.className =
+        `badge ${item.source_type || "forecast"}`;
+
+      sourceBadge.textContent =
+        item.source_type ||
+        "weather";
+
+      const scoreBadge =
+        document.createElement("span");
+
+      scoreBadge.className =
+        "badge score";
+
       scoreBadge.textContent = (
-        `Similarity ${Number(item.similarity || 0).toFixed(3)}`
+        `Similarity ` +
+        `${Number(item.similarity || 0).toFixed(3)}`
       );
 
-      badges.append(sourceBadge, scoreBadge);
-      heading.append(title, badges);
+      badges.append(
+        sourceBadge,
+        scoreBadge
+      );
 
-      const meta = document.createElement("div");
-      meta.className = "result-meta";
-      const timestamp = item.effective_at || item.issued_at;
+      heading.append(
+        title,
+        badges
+      );
+
+      const meta =
+        document.createElement("div");
+
+      meta.className =
+        "result-meta";
+
+      const timestamp =
+        item.effective_at ||
+        item.issued_at;
+
       meta.textContent = (
         `${item.location || "Unknown location"} · ` +
         `${timestamp ? formatDate(timestamp) : "Time unavailable"}`
       );
 
-      const text = document.createElement("p");
-      text.className = "result-text";
-      text.textContent = item.chunk_text || "";
+      const text =
+        document.createElement("p");
 
-      article.append(heading, meta, text);
+      text.className =
+        "result-text";
+
+      text.textContent =
+        item.chunk_text || "";
+
+      article.append(
+        heading,
+        meta,
+        text
+      );
+
       return article;
     }
 
-    searchForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      clearStatus(searchStatus);
-      resultsHeader.style.display = "none";
-      resultsHeader.textContent = "";
-      searchResults.replaceChildren();
-      summary.replaceChildren();
 
-      searchSubmit.disabled = true;
-      showStatus(searchStatus, "Searching weather embeddings...", "info");
+    function renderSummaryState(data) {
+      summaryContainer.replaceChildren();
 
-      const payload = {
-        query: searchQuery.value.trim(),
-        top_k: Number(document.getElementById("top-k").value),
-        source_type: document.getElementById("source-type").value || null,
-        location: searchLocation.value || null,
-        summarize: document.getElementById("summarize").checked
-      };
+      if (!data.summary_requested) {
+        return;
+      }
 
-      try {
-        const response = await fetch("/weather/search", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(payload)
-        });
-        const data = await response.json();
+      const box =
+        document.createElement("div");
 
-        if (!response.ok) {
-          throw new Error(data.error || `Request failed (${response.status})`);
-        }
+      const label =
+        document.createElement("strong");
 
-        if (!data.results || data.results.length === 0) {
-          showStatus(
-            searchStatus,
-            data.message || "No matching weather passages were found.",
-            "info"
-          );
-          return;
-        }
+      const text =
+        document.createElement("span");
 
-        clearStatus(searchStatus);
+      if (
+        data.summary_status === "generated" &&
+        data.summary
+      ) {
+        box.className =
+          "summary-box generated";
 
-        if (data.summary) {
-          const box = document.createElement("div");
-          box.className = "summary";
-          const label = document.createElement("strong");
-          label.textContent = "AI summary";
-          const text = document.createElement("span");
-          text.textContent = data.summary;
-          box.append(label, text);
-          summary.append(box);
-        }
+        label.textContent =
+          "AI-generated summary";
 
-        resultsHeader.style.display = "block";
-        resultsHeader.textContent = (
-          `Found ${data.count} relevant weather passages.`
+        text.textContent =
+          data.summary;
+      } else {
+        const statusClass = (
+          data.summary_status === "no_results"
+            ? "no-results"
+            : data.summary_status
         );
 
-        data.results.forEach((item) => {
-          searchResults.append(buildResultCard(item));
-        });
-      } catch (error) {
-        showStatus(searchStatus, String(error), "error");
-      } finally {
-        searchSubmit.disabled = false;
+        box.className =
+          `summary-box ${statusClass || "unavailable"}`;
+
+        label.textContent =
+          "AI summary status";
+
+        text.textContent = (
+          data.summary_message ||
+          "The AI summary could not be generated."
+        );
       }
-    });
+
+      box.append(
+        label,
+        text
+      );
+
+      summaryContainer.append(box);
+    }
+
+
+    searchForm.addEventListener(
+      "submit",
+      async (event) => {
+        event.preventDefault();
+
+        clearSearchOutput();
+
+        searchSubmit.disabled = true;
+
+        showStatus(
+          searchStatus,
+          "Searching weather embeddings...",
+          "info"
+        );
+
+        const payload = {
+          query:
+            searchQuery.value.trim(),
+
+          top_k: Number(
+            document
+              .getElementById("top-k")
+              .value
+          ),
+
+          source_type:
+            document
+              .getElementById("source-type")
+              .value || null,
+
+          location:
+            searchLocation.value || null,
+
+          summarize:
+            document
+              .getElementById("summarize")
+              .checked
+        };
+
+        try {
+          const response = await fetch(
+            "/weather/search",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(payload)
+            }
+          );
+
+          const data =
+            await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              data.error ||
+              `Request failed (${response.status})`
+            );
+          }
+
+          renderSummaryState(data);
+
+          if (
+            !data.results ||
+            data.results.length === 0
+          ) {
+            showStatus(
+              searchStatus,
+              (
+                data.message ||
+                "No matching weather passages were found."
+              ),
+              "info"
+            );
+
+            return;
+          }
+
+          clearStatus(searchStatus);
+
+          resultsHeader.style.display =
+            "block";
+
+          resultsHeader.textContent = (
+            `Found ${data.count} relevant weather passages.`
+          );
+
+          data.results.forEach((item) => {
+            searchResults.append(
+              buildResultCard(item)
+            );
+          });
+        } catch (error) {
+          showStatus(
+            searchStatus,
+            String(error),
+            "error"
+          );
+        } finally {
+          searchSubmit.disabled = false;
+        }
+      }
+    );
+
 
     loadLocationOptions();
     loadLocations();
