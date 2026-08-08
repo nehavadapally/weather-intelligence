@@ -100,6 +100,12 @@ def _upsert_weather_documents(documents: list[dict]) -> int:
     return len(documents)
 
 
+@app.get("/")
+def index():
+    """Serve the main HTML interface."""
+    return render_template("index.html")
+
+
 @app.get("/healthz")
 def healthz():
     return jsonify({"status": "ok"})

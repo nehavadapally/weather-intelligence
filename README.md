@@ -59,48 +59,48 @@ Official documentation:
     └── test_weather_client.py
 ```
 
-## API input conventions
+## API Input Conventions
 
 `POST /weather/sync` accepts a `locations` list. Each entry can be:
 
-- a county or area string, such as `"Somerset"`;
-- coordinates, such as `"51.5074,-0.1278"`;
-- `"all"`, which requests warnings across England.
+- **US city/state string**, such as `"Chicago, IL"` or `"Austin, TX"`
+- **Latitude,longitude coordinates**, such as `"41.8781,-87.6298"`
 
-Coordinate searches use `radius_km` as the Environment Agency distance filter.
+The client resolves city/state through OpenStreetMap Nominatim geocoding, then queries NWS `/points/{lat},{lon}` to get the forecast office grid point.
 
-Environment Agency severity levels are:
+**Request body:**
+```json
+{
+  "locations": ["Chicago, IL", "Austin, TX"],
+  "limit": 50
+}
+```
 
-| Level | Meaning |
-|---:|---|
-| 1 | Severe Flood Warning: danger to life |
-| 2 | Flood Warning: flooding expected, immediate action required |
-| 3 | Flood Alert: flooding possible, be prepared |
-| 4 | Warning no longer in force |
+**Response includes:**
+- `synced`: Number of documents upserted
+- `unique_documents`: Total unique documents collected
+- `locations`: List of locations processed
+- `errors`: Any locations that failed to resolve or fetch
 
-Use `min_severity: 3` for active levels 1–3. Use `min_severity: 4` when a classroom demonstration needs a wider sample including warnings no longer in force.
-
-## Lakebase schema
+## Lakebase Schema
 
 ### `weather_documents`
 
-| Column | Purpose |
-|---|---|
-| `id` | Stable deduplication key prefixed with `ea-flood:` |
-| `location` | Flood-area description or county |
-| `county` | County value returned by the source |
-| `query_latitude`, `query_longitude` | Coordinates used when the request was location-radius based |
-| `source_type` | `alert` |
-| `headline` | Severity plus affected area |
-| `narrative_text` | Normalised text used for embedding |
-| `severity`, `severity_level` | Environment Agency warning classification |
-| `flood_area_id` | Stable source flood-area identifier |
-| `river_or_sea` | River or sea name from the nested flood-area object |
-| `ea_area_name`, `ea_region_name` | Environment Agency administrative fields |
-| `source_url` | Source warning URI |
-| `issued_at`, `effective_at` | Warning timestamps |
-| `payload` | Complete source JSON for provenance |
-| `synced_at` | Last Lakebase upsert time |
+Stores raw NWS alert and forecast documents with narrative text for embedding.
+
+| Column | Type | Purpose |
+|---|---|---|
+| `id` | TEXT PRIMARY KEY | Stable deduplication key from NWS alert ID or hash |
+| `location` | TEXT NOT NULL | City/state (e.g., "Chicago, IL") |
+| `latitude` | DOUBLE PRECISION | Location latitude |
+| `longitude` | DOUBLE PRECISION | Location longitude |
+| `source_type` | TEXT NOT NULL | `"alert"` or `"forecast"` |
+| `headline` | TEXT NOT NULL | Alert event or forecast period name |
+| `narrative_text` | TEXT NOT NULL | Free-text body for embedding |
+| `issued_at` | TIMESTAMPTZ | When issued |
+| `effective_at` | TIMESTAMPTZ | When effective |
+| `payload` | JSONB NOT NULL | Complete NWS JSON for provenance |
+| `synced_at` | TIMESTAMPTZ NOT NULL | Last upsert timestamp |
 
 ### `weather_embeddings`
 
@@ -162,7 +162,7 @@ The script stores the URL as:
 database/lakebase-url
 ```
 
-The Environment Agency API needs no secret or API key.
+The NWS API needs no secret or API key.
 
 ## Step 4: Create the database tables
 
@@ -173,7 +173,7 @@ Choose one approach.
 Open a Postgres SQL editor connected to Lakebase and execute:
 
 ```text
-sql/01_setup_weather_tables.sql
+sql/01_setup_weather_documents_tables.sql
 ```
 
 This creates:
@@ -205,42 +205,27 @@ Health check:
 curl http://localhost:8000/healthz
 ```
 
-## Step 6: Harvest flood-warning documents
+## Step 6: Harvest NWS weather documents
 
-### Fetch active warnings across England
+### Fetch weather for US cities
 
 ```bash
 curl -X POST http://localhost:8000/weather/sync \
   -H "Content-Type: application/json" \
   -d '{
-    "locations": ["all"],
-    "limit": 100,
-    "min_severity": 3
+    "locations": ["Chicago, IL", "Austin, TX", "Seattle, WA"],
+    "limit": 50
   }'
 ```
 
-### Fetch by county
+### Fetch by coordinates
 
 ```bash
 curl -X POST http://localhost:8000/weather/sync \
   -H "Content-Type: application/json" \
   -d '{
-    "locations": ["Somerset", "Greater London"],
-    "limit": 50,
-    "min_severity": 3
-  }'
-```
-
-### Fetch near coordinates
-
-```bash
-curl -X POST http://localhost:8000/weather/sync \
-  -H "Content-Type: application/json" \
-  -d '{
-    "locations": ["51.5074,-0.1278"],
-    "radius_km": 50,
-    "limit": 50,
-    "min_severity": 3
+    "locations": ["41.8781,-87.6298"],
+    "limit": 50
   }'
 ```
 
@@ -375,53 +360,60 @@ pytest -q
 
 ```json
 {
-  "query": "flooding may affect roads and nearby properties",
+  "query": "flash flood warning near rivers this weekend",
   "top_k": 5,
-  "count": 1,
-  "filters": {
-    "county": null,
-    "max_severity_level": null
-  },
+  "count": 2,
   "results": [
     {
-      "id": "ea-flood:123ABC",
-      "location": "River Example at Example Town",
-      "county": "Somerset",
+      "id": "nws-alert-123ABC",
+      "location": "Chicago, IL",
+      "latitude": 41.8781,
+      "longitude": -87.6298,
       "source_type": "alert",
-      "headline": "Flood Alert: River Example at Example Town",
-      "severity": "Flood Alert",
-      "severity_level": 3,
+      "headline": "Flash Flood Warning",
       "chunk_index": 0,
-      "chunk_text": "Severity: Flood Alert...",
+      "chunk_text": "A Flash Flood Warning means flooding is occurring or imminent. Move to higher ground immediately...",
+      "similarity": 0.82
+    },
+    {
+      "id": "nws-forecast-xyz789",
+      "location": "Austin, TX",
+      "latitude": 30.2672,
+      "longitude": -97.7431,
+      "source_type": "forecast",
+      "headline": "Saturday Night Forecast",
+      "chunk_index": 0,
+      "chunk_text": "Showers and thunderstorms likely. Some storms may produce heavy rainfall...",
       "similarity": 0.71
     }
   ]
 }
 ```
 
-## Known limitations
+## Known Limitations
 
-- The Environment Agency API covers England, not Scotland, Wales or Northern Ireland.
-- It is a beta, near-real-time service and does not provide a guaranteed service level.
-- The API returns current warning records, so the available number of documents varies with real flood conditions.
-- County filtering depends on source county text and is not a general city-name geocoder.
-- The source is focused on flood warnings rather than general temperature, wind or multi-day weather forecasts.
-- The first embedding run downloads the sentence-transformer model and may take longer than later runs.
-- This is not a safety-critical warning application and does not replace official public warning channels.
+- The NWS API covers the United States and its territories only
+- Geocoding depends on Nominatim OpenStreetMap service availability
+- Active alerts vary by current weather conditions (may be sparse during calm weather)
+- Forecast narratives are most detailed for 7-day outlook; longer-range forecasts have less text
+- The first embedding run downloads the sentence-transformer model (~100MB) and may take longer
+- This is a homework/demo application and does not replace official NWS warning channels
+- Rate limits: Be respectful of NWS and Nominatim API rate limits (recommend User-Agent header)
 
-## How the Day 2 files were repurposed
+## How the Day 2 Files Were Repurposed
 
-| Day 2 pattern | Homework 2 implementation |
+| Day 2 Pattern | Homework 2 Implementation |
 |---|---|
-| `massive_client.py` API wrapper | `weather_client.py` Environment Agency wrapper |
+| `massive_client.py` API wrapper | `weather_client.py` NWS API wrapper |
 | `ticker_news_documents` | `weather_documents` |
 | `ticker_news_embeddings` | `weather_embeddings` |
-| News title/description text | Flood severity, area and warning message |
+| News title/description text | Alert headline/description + forecast narratives |
 | News sync endpoint | `POST /weather/sync` |
 | News vector search | `POST /weather/search` |
 | SentenceTransformer singleton | Reused for weather query vectors |
-| psycopg2 Lakebase helper | Reused and simplified |
+| psycopg2 Lakebase helper | Reused with same connection pattern |
 | pgvector `<=>` retrieval | Reused for cosine similarity |
+| Chunking logic | Reused 800/100 parameters |
 
 The stock watchlist, Massive API secret and ticker-news tables were removed from this submission repo because they are not required for Homework 2 and would create unnecessary duplication.
 
