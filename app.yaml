@@ -9,7 +9,7 @@ env:
   - name: GEOCODER_BASE_URL
     value: "https://nominatim.openstreetmap.org"
   - name: NWS_USER_AGENT
-    value: "weather-intelligence-homework/1.0 (replace-with-your-email@example.com)"
+    value: "weather-intelligence-homework/1.0 (https://github.com/nehavadapally/weather-intelligence)"
   - name: WEATHER_DOCUMENTS_TABLE_NAME
     value: "weather_documents"
   - name: WEATHER_EMBEDDINGS_TABLE_NAME

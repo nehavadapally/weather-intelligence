@@ -1,14 +1,5 @@
-"""Tests for weather_client.NWSWeatherClient.
-
-The previous version of this file imported a nonexistent
-`EnvironmentAgencyWeatherClient` (leftover from an earlier UK Environment
-Agency-based design that was abandoned in favor of the NWS API) and failed
-at collection - `pytest` never even got to run a single test. These tests
-exercise the client actually shipped in weather_client.py, with all network
-calls monkeypatched so the suite runs offline and deterministically.
-"""
-
 import pytest
+import requests
 
 from weather_client import (
     NWSWeatherClient,
@@ -93,6 +84,82 @@ def test_resolve_location_rejects_out_of_range_coordinates():
         client.resolve_location("200,-87.6298")
 
 
+def test_resolve_location_uses_builtin_table_without_any_network_call(monkeypatch):
+    # New York, NY is in _KNOWN_US_PLACES - resolving it must never touch
+    # the network, so the geocoder can be 403-blocked (as it was in
+    # production - see the "Nominatim 403" incident) and this still works.
+    client = make_client()
+
+    def fail_get(*args, **kwargs):
+        raise AssertionError("a built-in place shouldn't hit the network at all")
+
+    monkeypatch.setattr(client, "_get", fail_get)
+    resolved = client.resolve_location("New York, NY")
+    assert resolved.latitude == pytest.approx(40.7128)
+    assert resolved.longitude == pytest.approx(-74.0060)
+
+
+def test_resolve_location_builtin_table_lookup_is_case_insensitive(monkeypatch):
+    client = make_client()
+    monkeypatch.setattr(
+        client, "_get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no network"))
+    )
+    resolved = client.resolve_location("new york, ny")
+    assert resolved.latitude == pytest.approx(40.7128)
+
+
+def test_get_raises_actionable_error_on_geocoder_403(monkeypatch):
+    # Reproduces the real production failure: Nominatim's public server
+    # blocks shared cloud/PaaS egress IPs with a 403, independent of
+    # User-Agent. The raw requests.HTTPError shouldn't leak out as-is -
+    # _get() should explain what's actually going on.
+    client = make_client()
+
+    class _FakeResponse:
+        status_code = 403
+
+        def raise_for_status(self):
+            error = requests.HTTPError("403 Client Error: Forbidden")
+            error.response = self
+            raise error
+
+    monkeypatch.setattr(
+        client.session, "get", lambda url, params=None, timeout=None: _FakeResponse()
+    )
+
+    with pytest.raises(WeatherClientError) as excinfo:
+        client._get(f"{client.geocoder_base_url}/search", params={"q": "Nowhereville"})
+
+    message = str(excinfo.value)
+    assert "403" in message
+    assert "Nominatim" in message
+    assert "_KNOWN_US_PLACES" in message
+
+
+def test_get_403_from_nws_is_not_treated_as_geocoder_block(monkeypatch):
+    # The special-cased 403 message is specific to the geocoder host - an
+    # NWS 403 (unlikely, but possible) should fall through to the generic
+    # error path instead of claiming to be a Nominatim block it isn't.
+    client = make_client()
+
+    class _FakeResponse:
+        status_code = 403
+
+        def raise_for_status(self):
+            error = requests.HTTPError("403 Client Error: Forbidden")
+            error.response = self
+            raise error
+
+    monkeypatch.setattr(
+        client.session, "get", lambda url, params=None, timeout=None: _FakeResponse()
+    )
+
+    with pytest.raises(WeatherClientError) as excinfo:
+        client._get(f"{client.nws_base_url}/points/41.8781,-87.6298")
+
+    assert "Nominatim" not in str(excinfo.value)
+
+
 def test_resolve_location_rejects_empty_string():
     client = make_client()
     with pytest.raises(WeatherClientError):
@@ -100,6 +167,8 @@ def test_resolve_location_rejects_empty_string():
 
 
 def test_resolve_location_geocodes_city_state(monkeypatch):
+    # Ann Arbor, MI is deliberately NOT in _KNOWN_US_PLACES, so this
+    # exercises the real Nominatim fallback path.
     client = make_client()
     captured = {}
 
@@ -108,18 +177,18 @@ def test_resolve_location_geocodes_city_state(monkeypatch):
         captured["params"] = params
         return [
             {
-                "lat": "41.8781",
-                "lon": "-87.6298",
-                "display_name": "Chicago, Cook County, Illinois, United States",
+                "lat": "42.2808",
+                "lon": "-83.7430",
+                "display_name": "Ann Arbor, Washtenaw County, Michigan, United States",
             }
         ]
 
     monkeypatch.setattr(client, "_get", fake_get)
-    resolved = client.resolve_location("Chicago, IL")
-    assert resolved.latitude == pytest.approx(41.8781)
-    assert resolved.longitude == pytest.approx(-87.6298)
-    assert resolved.label == "Chicago, Cook County, Illinois, United States"
-    assert captured["params"]["q"] == "Chicago, IL"
+    resolved = client.resolve_location("Ann Arbor, MI")
+    assert resolved.latitude == pytest.approx(42.2808)
+    assert resolved.longitude == pytest.approx(-83.7430)
+    assert resolved.label == "Ann Arbor, Washtenaw County, Michigan, United States"
+    assert captured["params"]["q"] == "Ann Arbor, MI"
     assert captured["params"]["countrycodes"] == "us"
 
 
@@ -129,11 +198,11 @@ def test_resolve_location_caches_geocode_results(monkeypatch):
 
     def fake_get(url, params=None):
         call_count["n"] += 1
-        return [{"lat": "41.8781", "lon": "-87.6298", "display_name": "Chicago, IL"}]
+        return [{"lat": "42.2808", "lon": "-83.7430", "display_name": "Ann Arbor, MI"}]
 
     monkeypatch.setattr(client, "_get", fake_get)
-    client.resolve_location("Chicago, IL")
-    client.resolve_location("chicago, il")  # same key once case-folded
+    client.resolve_location("Ann Arbor, MI")
+    client.resolve_location("ann arbor, mi")  # same key once case-folded
     assert call_count["n"] == 1
 
 
