@@ -7,7 +7,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from psycopg2.extras import execute_values
 from sentence_transformers import SentenceTransformer
 
