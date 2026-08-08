@@ -1,532 +1,299 @@
-# Homework 2: Weather Intelligence with Databricks Lakebase
+# Homework 3: Weather-Prediction MCP Server and Agent
 
-## 1. Project Overview
+## Overview
 
-This project uses **Databricks Lakebase** and **pgvector** to store and search weather alerts and forecasts.
+This submission converts the Weather Intelligence work from Homework 2 into a tool library that a Databricks Agent Bricks agent can call through the Model Context Protocol.
 
-App URL: https://weather-app-7474645166709307.aws.databricksapps.com/
+The Homework 2 Flask application, Lakebase weather documents and vector embeddings can remain in the same repository. Homework 3 adds a separate `mcp_server/` Databricks App containing a thin FastMCP layer and a weather adapter responsible for all HTTP, parsing and recommendation logic.
 
-### Pipeline
+## Architecture
 
 ```text
+User
+  |
+  v
+Databricks Agent Bricks
+  |
+  | MCP tool call
+  v
+mcp_server/weather_mcp_server.py
+  |
+  | Python adapter call
+  v
+mcp_server/weather_adapter.py
+  |
+  | HTTPS
+  v
 National Weather Service API
-            ↓
-Databricks App
-POST /weather/sync
-            ↓
-Lakebase: weather_documents
-            ↓
-Databricks Embedding Notebook
-            ↓
-Lakebase: weather_embeddings
-            ↓
-Databricks App
-POST /weather/search
-            ↓
-Search Results
 ```
 
-The application has two main tabs:
+The MCP server and existing Homework 2 Flask application are deployed independently. This avoids mixing a human-facing REST/UI application with the agent-facing MCP service.
 
-* **My Locations** – Add, sync, refresh, and delete US locations.
-* **Vector Search** – Search weather alerts and forecasts using natural-language questions.
+## Weather API choice
 
-Screenshots and other submission evidence are stored in:
+The project continues to use the National Weather Service API because:
 
-```text
-evidence/
-```
+- It is free.
+- It does not require an API key or credit card.
+- It provides official United States observations, forecasts and active alerts.
+- It allows substantial reuse of the Homework 2 NWS client and location-resolution work.
 
----
+The limitation is that the implementation only supports locations covered by the National Weather Service. The agent system prompt explicitly prevents the agent from pretending that international coverage is available.
 
-# 2. Data Source
-
-The project uses the **US National Weather Service (NWS) API**.
-
-The NWS API was selected because it:
-
-* Is public.
-* Does not require an API key.
-* Provides active weather alerts.
-* Provides detailed forecasts.
-* Provides text suitable for embeddings.
-* Provides timestamps and location information.
-
-The application collects:
-
-* Weather alerts.
-* Alert descriptions and instructions.
-* Forecast information.
-* Forecast periods and timestamps.
-
-> The NWS API only covers the United States and its territories.
-
----
-
-# 3. Databricks Architecture
-
-The project uses these Databricks components:
-
-| Component             | Purpose                                            |
-| --------------------- | -------------------------------------------------- |
-| Databricks Git Folder | Stores application, SQL, notebook, and other files |
-| Lakebase              | Stores weather documents and embeddings            |
-| Databricks Secrets    | Stores the Lakebase connection URL                 |
-| Databricks Notebook   | Creates text chunks and embeddings                 |
-| Databricks App        | Provides the UI and REST API                       |
-| Model Serving         | Optional AI summary of search results              |
-
----
-
-# 4. Database Tables
-
-The project uses two Lakebase tables.
-
-## `weather_documents`
-
-Stores the original weather information.
-
-| Column           | Purpose                         |
-| ---------------- | ------------------------------- |
-| `id`             | Unique document ID              |
-| `location`       | Location such as `New York, NY` |
-| `latitude`       | Location latitude               |
-| `longitude`      | Location longitude              |
-| `source_type`    | `alert` or `forecast`           |
-| `headline`       | Alert or forecast title         |
-| `narrative_text` | Main weather text               |
-| `issued_at`      | Issue time                      |
-| `effective_at`   | Effective time                  |
-| `payload`        | Original NWS JSON data          |
-| `synced_at`      | Last sync time                  |
-
-The application uses stable IDs and `ON CONFLICT` upserts to prevent duplicate records.
-
-## `weather_embeddings`
-
-Stores text chunks and their vector embeddings.
-
-| Column         | Purpose                  |
-| -------------- | ------------------------ |
-| `id`           | Unique embedding ID      |
-| `document_id`  | Related weather document |
-| `chunk_index`  | Chunk position           |
-| `chunk_text`   | Text used for search     |
-| `content_hash` | Detects changed text     |
-| `embedding`    | 384-dimensional vector   |
-| `model_name`   | Embedding model          |
-| `created_at`   | Creation time            |
-
-The relationship uses:
-
-```sql
-ON DELETE CASCADE
-```
-
-Therefore, deleting a weather document also deletes its embeddings.
-
----
-
-# 5. Embedding Configuration
-
-The embedding notebook uses:
-
-| Setting          | Value                                    |
-| ---------------- | ---------------------------------------- |
-| Chunk size       | 800 characters                           |
-| Chunk overlap    | 100 characters                           |
-| Model            | `sentence-transformers/all-MiniLM-L6-v2` |
-| Vector size      | 384                                      |
-| Database library | `psycopg2`                               |
-| Batch insert     | `execute_values`                         |
-| Vector index     | HNSW                                     |
-| Distance         | Cosine distance                          |
-
-The same embedding model is used for:
-
-* Weather documents.
-* User search queries.
-
----
-
-# 6. Project Files
-
-The main project structure is:
+## Repository structure
 
 ```text
 weather-intelligence/
-├── app.py
-├── app.yaml
-├── lakebase.py
-├── weather_client.py
-├── weather_sync.py
-├── llm_summary.py
-├── text_utils.py
-├── notebooks/
-│   └── ingest_weather_embeddings.ipynb
-├── sql/
-│   ├── 01_setup_weather_documents_tables.sql
-│   └── 02_setup_weather_embeddings_table.sql
-├── templates/
-│   └── index.html
-└── evidence/
+├── app.py                         # Existing Homework 2 Flask application
+├── weather_client.py              # Existing Homework 2 ingestion client
+├── weather_sync.py                # Existing Homework 2 synchronisation
+├── lakebase.py                    # Existing Homework 2 database helper
+├── notebooks/                     # Existing embedding pipeline
+├── sql/                           # Existing Lakebase schemas
+├── mcp_server/
+│   ├── weather_adapter.py         # HTTP, parsing and recommendation logic
+│   ├── weather_mcp_server.py      # Thin FastMCP tool definitions
+│   ├── app.yaml                   # Databricks App configuration
+│   ├── requirements.txt           # Runtime dependencies
+│   ├── requirements-dev.txt       # Test dependencies
+│   ├── .env.example               # Local configuration example
+│   └── tests/
+│       └── test_weather_adapter.py
+├── agent/
+│   ├── SYSTEM_PROMPT.md
+│   └── DEMO_QUESTIONS.md
+├── README_HOMEWORK_3.md
+└── NEXT_STEPS.md
 ```
 
----
+## MCP tools
 
-# 7. Run the Project in Databricks
+### 1. `get_current_weather(location)`
 
-## Step 1: Open the Git Repository
+Retrieves the latest observation from the nearest NWS observation station.
 
-Open **Workspace → Git Folders** in Databricks and clone the project repository.
+Returns:
+
+- Temperature in Celsius and Fahrenheit
+- Conditions
+- Relative humidity
+- Wind speed and direction
+- Observation timestamp
+- Observation station
+
+Example agent question:
 
 ```text
-https://github.com/nehavadapally/weather-intelligence.git
+What is the weather in Chicago, IL right now?
 ```
 
----
+### 2. `get_weather_forecast(location, days=3)`
 
-## Step 2: Create Lakebase
+Retrieves daytime and night-time forecast periods for one to seven days.
 
-Create a Databricks Lakebase PostgreSQL database.
+Returns:
 
-The connection URL has this format:
+- Period name and timestamps
+- Temperature in Celsius and Fahrenheit
+- Precipitation probability
+- Wind
+- Short conditions
+- Detailed narrative forecast
+
+Example agent question:
 
 ```text
-postgresql://username:password@host:5432/database?sslmode=require
+Will it rain in Austin, TX during the next three days?
 ```
 
-Do not commit this connection string or password to GitHub.
+### 3. `get_weather_recommendation(location, target_date=None)`
 
----
+Applies transparent rule-based logic to forecast and alert data. This satisfies the assignment requirement for a prediction or recommendation that does more than repeat an API response.
 
-## Step 3: Configure Databricks Secrets
+Rules:
 
-Create a Databricks secret:
+- Bring an umbrella when precipitation probability is at least 40%, or rain, shower, thunderstorm, snow, sleet or drizzle language is present.
+- Bring a jacket when the minimum temperature is 15°C or below, or forecast wind reaches 8 m/s.
+- Apply heat caution when the maximum temperature reaches 32°C.
+- Recommend avoiding or postponing exposed outdoor activity when an active alert exists, severe-weather language is present, precipitation reaches 70%, or wind reaches 15 m/s.
+
+The response includes the evidence and the method so the agent can explain its recommendation.
+
+Example agent question:
 
 ```text
-Scope: database
-Key: lakebase-url
+Should I take an umbrella and jacket in New York, NY tomorrow?
 ```
 
-The application uses:
+### 4. `get_active_weather_alerts(location)`
+
+Retrieves active NWS watches, warnings and advisories.
+
+Returns:
+
+- Event and headline
+- Severity, urgency and certainty
+- Onset and expiry
+- Description
+- Official instruction text
+
+Example agent question:
 
 ```text
-LAKEBASE_SECRET_SCOPE=database
-LAKEBASE_SECRET_KEY=lakebase-url
+Are there any severe-weather warnings for Miami, FL?
 ```
 
-For local testing, the connection can also be provided using:
+## Separation of responsibilities
 
-```text
-LAKEBASE_URL
-```
+### `weather_adapter.py`
 
----
+Contains:
 
-## Step 4: Create the Lakebase Tables
+- Location resolution
+- NWS `/points` calls
+- Observation-station lookup
+- Current observation retrieval
+- Forecast retrieval and normalisation
+- Active alert retrieval
+- Recommendation thresholds and evidence
+- Clean domain errors
 
-Run the SQL files in this order:
+### `weather_mcp_server.py`
 
-```text
-sql/01_setup_weather_documents_tables.sql
-sql/02_setup_weather_embeddings_table.sql
-```
+Contains:
 
-The second file:
+- `FastMCP` initialisation
+- `@mcp.tool` definitions
+- Tool docstrings
+- Consistent success/error response wrappers
+- Streamable HTTP server startup
 
-* Enables pgvector.
-* Creates `weather_embeddings`.
-* Creates `VECTOR(384)`.
-* Creates the HNSW vector index.
+There are no direct HTTP calls inside the MCP tool functions.
 
-Check that the tables exist:
+## Standard tool response
 
-```sql
-SELECT table_name
-FROM information_schema.tables
-WHERE table_name IN (
-    'weather_documents',
-    'weather_embeddings'
-);
-```
-
----
-
-# 8. Deploy the Databricks App
-
-Create a **Databricks App** using the project Git folder.
-
-The application is configured through:
-
-```text
-app.yaml
-```
-
-The application starts with:
-
-```text
-python app.py
-```
-
-The main API endpoints are:
-
-```text
-GET  /healthz
-POST /weather/sync
-POST /weather/search
-```
-
-After deployment, open the Databricks App URL.
-
-Check:
-
-```text
-https://<databricks-app-url>/healthz
-```
-
-Expected response:
+Successful tools return:
 
 ```json
 {
-  "status": "ok"
+  "status": "success",
+  "tool": "get_weather_forecast",
+  "message": "get_weather_forecast completed successfully.",
+  "data": {}
 }
 ```
 
----
-
-# 9. Sync Weather Data
-
-Open the **My Locations** tab.
-
-Enter a US location using:
-
-```text
-City, ST
-```
-
-Example:
-
-```text
-New York, NY
-```
-
-Click **Add and Sync Location**.
-
-The application calls:
-
-```text
-POST /weather/sync
-```
-
-Example request:
+Failures return:
 
 ```json
 {
-  "locations": ["New York, NY"],
-  "limit": 50
+  "status": "error",
+  "tool": "get_weather_forecast",
+  "message": "The location could not be resolved.",
+  "data": null
 }
 ```
 
-The sync process:
+This helps the agent handle failures without receiving a raw stack trace.
 
-1. Finds the location coordinates.
-2. Calls the NWS API.
-3. Gets alerts and forecasts.
-4. Converts the data into a standard format.
-5. Saves the data in `weather_documents`.
+## Local setup
 
-Check the stored data:
-
-```sql
-SELECT
-    id,
-    location,
-    source_type,
-    headline,
-    synced_at
-FROM weather_documents
-ORDER BY synced_at DESC;
+```bash
+cd mcp_server
+python -m venv .venv
 ```
 
----
+Activate the environment and install dependencies:
 
-# 10. Create Embeddings
+```bash
+pip install -r requirements-dev.txt
+```
 
-Open:
+Run tests:
+
+```bash
+pytest -q
+```
+
+Start the MCP server:
+
+```bash
+python weather_mcp_server.py
+```
+
+The server uses port 8000 unless `PORT` or `DATABRICKS_APP_PORT` is set.
+
+## Databricks deployment
+
+1. Push the Homework 3 files to the `weather-intelligence` repository.
+2. Pull the repository into a Databricks Git folder.
+3. Create a Databricks MCP Server Starter App, when available.
+4. Change the deployment source to the Git folder's `mcp_server/` subfolder.
+5. Deploy and check the app logs.
+6. Add the deployed app as a Custom MCP Server in Agent Bricks or the AI/ML Playground.
+7. Confirm that the four tools are discovered.
+8. Copy `agent/SYSTEM_PROMPT.md` into the system-prompt field.
+9. Run the questions in `agent/DEMO_QUESTIONS.md`.
+10. Capture the tool calls and final answers as submission evidence.
+
+The detailed UI sequence and validation checklist are in `NEXT_STEPS.md`.
+
+## Agent guardrails
+
+The supplied system prompt instructs the agent to:
+
+- Call a tool before stating live weather information.
+- Select the correct tool for current conditions, forecasts, recommendations or alerts.
+- Never invent weather data.
+- State that NWS coverage is United States only.
+- Ask for a clearer location when required.
+- Treat forecasts as uncertain predictions.
+- Follow official instructions during severe weather.
+- Explain tool errors rather than guessing.
+
+## Demonstration evidence
+
+Add screenshots to:
 
 ```text
-notebooks/ingest_weather_embeddings.ipynb
+evidence/homework-3/
 ```
 
-Run the notebook from top to bottom.
+Minimum demonstrations:
 
-The notebook:
+1. Current conditions in Chicago
+2. Three-day forecast for Austin
+3. Umbrella and jacket recommendation for New York
 
-1. Connects to Lakebase.
-2. Reads `weather_documents`.
-3. Finds new or changed documents.
-4. Splits text into 800-character chunks.
-5. Uses 100-character overlap.
-6. Creates embeddings using MiniLM.
-7. Stores the vectors in `weather_embeddings`.
-8. Removes old chunks when source text changes.
+Recommended additional test:
 
-The notebook uses `psycopg2`.
+4. An international location showing the US-only coverage limitation
 
-Do not uninstall the Databricks-provided `psycopg2`.
+## Known limitations
 
-Check the embedding data:
+- The National Weather Service is US-only.
+- Public Nominatim geocoding can reject shared Databricks cloud addresses. Common cities are resolved from a local catalogue, and coordinates can always be supplied directly.
+- Weather recommendations are simple documented rules, not a trained forecasting model.
+- Forecast availability depends on NWS service availability.
+- The current version does not yet expose Homework 2 Lakebase vector search as an MCP tool.
+- A dashboard is not included because it is an optional stretch goal.
 
-```sql
-SELECT
-    COUNT(*) AS embedding_rows,
-    COUNT(DISTINCT document_id) AS embedded_documents
-FROM weather_embeddings;
-```
+## Possible improvements
 
----
+- Add a `search_weather_context` MCP tool backed by the existing Homework 2 `weather_embeddings` table.
+- Add Lakebase tracing for tool name, parameters, status, duration, session and error messages.
+- Add Open-Meteo as an international fallback.
+- Expand the local US location catalogue.
+- Add a dashboard for recent agent questions and tool outcomes.
 
-# 11. Vector Search
+## Submission checklist
 
-Open the **Vector Search** tab.
-
-Enter a question such as:
-
-```text
-risk of flooding near rivers
-```
-
-The application calls:
-
-```text
-POST /weather/search
-```
-
-Example request:
-
-```json
-{
-  "query": "risk of flooding near rivers",
-  "top_k": 5
-}
-```
-
-The search process:
-
-1. Creates an embedding for the question.
-2. Searches the stored weather vectors.
-3. Calculates cosine similarity.
-4. Returns the most relevant weather passages.
-
-`top_k` is limited to 1–20 results.
-
-### Optional Filters
-
-Search can also be filtered by:
-
-* Location.
-* Alert or forecast.
-* Number of results.
-
-Example:
-
-```json
-{
-  "query": "strong winds and travel disruption",
-  "top_k": 5,
-  "source_type": "alert",
-  "location": "New York, NY",
-  "summarize": false
-}
-```
-
----
-
-# 12. Refresh and Delete Locations
-
-## Refresh
-
-Click **Sync** for an existing location.
-
-This updates the weather documents.
-
-After syncing new or changed documents, run the embedding notebook again so the new information becomes searchable.
-
-## Delete
-
-Click **Delete** for a location.
-
-The deletion works like this:
-
-```text
-Delete weather documents
-          ↓
-ON DELETE CASCADE
-          ↓
-Delete related embeddings
-          ↓
-Remove location from the UI
-```
-
----
-
-# 13. Optional AI Summary
-
-The application can optionally generate an AI summary of search results using **Databricks Model Serving**.
-
-To enable it, configure the serving endpoint in `app.yaml`:
-
-```yaml
-- name: SUMMARY_MODEL_ENDPOINT
-  value: "your-serving-endpoint-name"
-```
-
-The Databricks App must have permission to query the Model Serving endpoint.
-
-If Model Serving is unavailable, normal vector-search results still work.
-
----
-
-# 14. Known Limitations
-
-* NWS data is limited to the US and its territories.
-* The built-in location list does not contain every US location.
-* Some unknown locations may use Nominatim geocoding.
-* Newly synced documents must be embedded before they can be searched.
-* Active alert counts change with current weather conditions.
-* The first embedding run may take longer because the model needs to download.
-* AI summaries require a working Model Serving endpoint.
-* This project is for learning and should not replace official emergency warnings.
-
----
-
-# 15. Future Improvements
-
-Possible improvements include:
-
-* Schedule weather sync using a Databricks Job.
-* Automatically run embeddings after syncing.
-* Create a workflow:
-
-```text
-Sync Weather
-     ↓
-Create Embeddings
-     ↓
-Validate Data
-     ↓
-Notify on Failure
-```
-
-Other improvements could include:
-
-* Hourly forecasts.
-* Additional weather data sources.
-* Authentication.
-* Per-user saved locations.
-* Recency-based search ranking.
-* Monitoring and dashboards.
-* Automated API tests.
-* Performance comparison between HNSW and exact vector search.
----
+- [ ] FastMCP server deployed as its own Databricks App
+- [ ] Separate weather adapter contains all HTTP and parsing logic
+- [ ] At least three MCP tools visible in Agent Bricks
+- [ ] Recommendation tool applies documented logic
+- [ ] Clean error returned for invalid locations and API failures
+- [ ] No secret or API key committed
+- [ ] Agent system prompt configured
+- [ ] Three tool-calling demonstrations captured
+- [ ] GitHub repository and App evidence added to this README

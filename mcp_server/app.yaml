@@ -1,0 +1,21 @@
+command:
+  - "python"
+  - "weather_mcp_server.py"
+
+resources:
+  - name: requirements
+    source:
+      path: ./requirements.txt
+
+env:
+  - name: NWS_API_BASE_URL
+    value: "https://api.weather.gov"
+
+  - name: GEOCODER_BASE_URL
+    value: "https://nominatim.openstreetmap.org"
+
+  - name: NWS_USER_AGENT
+    value: "weather-intelligence-mcp/1.0 (https://github.com/nehavadapally/weather-intelligence)"
+
+  - name: WEATHER_HTTP_TIMEOUT
+    value: "30"
