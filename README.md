@@ -4,6 +4,8 @@
 
 This project uses **Databricks Lakebase** and **pgvector** to store and search weather alerts and forecasts.
 
+App URL: https://weather-app-7474645166709307.aws.databricksapps.com/
+
 ### Pipeline
 
 ```text
