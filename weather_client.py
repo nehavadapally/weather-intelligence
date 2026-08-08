@@ -1,9 +1,9 @@
-"""Environment Agency flood-warning client for Homework 2.
+"""National Weather Service API client and weather-document normaliser.
 
-The Environment Agency Real-Time Flood Monitoring API is a free, unauthenticated
-JSON API for England. This client treats flood warnings as unstructured weather
-alerts and normalises their narrative messages into the document schema used by
-Lakebase and pgvector.
+Inputs can be US place names such as ``Chicago, IL`` or coordinate strings such
+as ``41.8781,-87.6298``. Place names are resolved through the public Nominatim
+geocoder. Coordinates are then resolved through NWS ``/points`` before active
+alerts and narrative forecasts are collected.
 """
 
 from __future__ import annotations
@@ -11,77 +11,81 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
+from dataclasses import dataclass
 from typing import Any
 
 import requests
 
-_BASE_URL = os.environ.get(
-    "EA_FLOOD_API_BASE_URL",
-    "https://environment.data.gov.uk/flood-monitoring",
+NWS_BASE_URL = os.environ.get("NWS_API_BASE_URL", "https://api.weather.gov").rstrip("/")
+GEOCODER_BASE_URL = os.environ.get(
+    "GEOCODER_BASE_URL", "https://nominatim.openstreetmap.org"
 ).rstrip("/")
-_USER_AGENT = os.environ.get(
-    "WEATHER_USER_AGENT",
-    "databricks-weather-intelligence-homework/1.0",
+NWS_USER_AGENT = os.environ.get(
+    "NWS_USER_AGENT",
+    "weather-intelligence-homework/1.0 (replace-with-your-email@example.com)",
 )
-_DEFAULT_TIMEOUT = int(os.environ.get("WEATHER_HTTP_TIMEOUT", "30"))
-_COORDINATE_RE = re.compile(
+HTTP_TIMEOUT = int(os.environ.get("WEATHER_HTTP_TIMEOUT", "30"))
+
+_COORDINATE_PATTERN = re.compile(
     r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$"
 )
 
 
 class WeatherClientError(RuntimeError):
-    """Raised when a flood-monitoring request or response is invalid."""
+    """Raised when a location or weather API request cannot be processed."""
 
 
-class EnvironmentAgencyWeatherClient:
-    """Fetch and normalise Environment Agency flood warnings.
+@dataclass(frozen=True)
+class ResolvedLocation:
+    requested: str
+    label: str
+    latitude: float
+    longitude: float
 
-    A location selector can be:
 
-    * a county/area string, for example ``"Somerset"``;
-    * coordinates, for example ``"51.5074,-0.1278"``;
-    * ``"all"`` to request warnings across England.
-    """
+def clean_text(value: Any) -> str:
+    """Collapse repeated whitespace while preserving readable text."""
+    return " ".join(str(value or "").split()).strip()
 
-    attribution = (
-        "This uses Environment Agency flood and river level data from the "
-        "real-time data API (Beta)."
-    )
+
+def stable_hash(*parts: str) -> str:
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+class NWSWeatherClient:
+    """Thin requests-based client for geocoding and NWS weather endpoints."""
 
     def __init__(
         self,
-        base_url: str | None = None,
-        timeout: int = _DEFAULT_TIMEOUT,
+        nws_base_url: str | None = None,
+        geocoder_base_url: str | None = None,
         user_agent: str | None = None,
+        timeout: int = HTTP_TIMEOUT,
     ) -> None:
-        self.base_url = (base_url or _BASE_URL).rstrip("/")
+        self.nws_base_url = (nws_base_url or NWS_BASE_URL).rstrip("/")
+        self.geocoder_base_url = (geocoder_base_url or GEOCODER_BASE_URL).rstrip("/")
+        self.user_agent = user_agent or NWS_USER_AGENT
         self.timeout = timeout
-        self.user_agent = user_agent or _USER_AGENT
-        self._session = requests.Session()
-        self._session.headers.update(
+        self.session = requests.Session()
+        self.session.headers.update(
             {
-                "Accept": "application/json",
+                "Accept": "application/geo+json, application/json",
                 "User-Agent": self.user_agent,
             }
         )
+        self._geocode_cache: dict[str, ResolvedLocation] = {}
+        self._last_geocode_at = 0.0
 
-    def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
-        url = f"{self.base_url}{path}"
+    def _get(
+        self, url: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any] | list[Any]:
         try:
-            response = self._session.get(
-                url,
-                params=params,
-                timeout=self.timeout,
-                allow_redirects=True,
-            )
+            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
-            payload = response.json()
+            return response.json()
         except (requests.RequestException, ValueError) as exc:
-            raise WeatherClientError(f"Environment Agency request failed: {exc}") from exc
-
-        if not isinstance(payload, dict):
-            raise WeatherClientError("Environment Agency returned an unexpected response")
-        return payload
+            raise WeatherClientError(f"Request failed for {url}: {exc}") from exc
 
     @staticmethod
     def _validate_coordinates(latitude: float, longitude: float) -> None:
@@ -90,152 +94,186 @@ class EnvironmentAgencyWeatherClient:
         if not -180 <= longitude <= 180:
             raise WeatherClientError(f"Invalid longitude: {longitude}")
 
-    @staticmethod
-    def _bounded_int(value: int, minimum: int, maximum: int) -> int:
-        return max(minimum, min(int(value), maximum))
-
-    def fetch_documents(
-        self,
-        location: str = "all",
-        *,
-        limit: int = 50,
-        radius_km: int = 50,
-        min_severity: int = 3,
-    ) -> list[dict[str, Any]]:
-        """Fetch warnings for one selector and return normalised documents.
-
-        Environment Agency severity levels are:
-        1 = Severe Flood Warning, 2 = Flood Warning, 3 = Flood Alert,
-        4 = Warning no longer in force. ``min_severity=3`` therefore returns
-        current levels 1-3; use 4 when a classroom demo needs a wider sample.
-        """
-        if not isinstance(location, str) or not location.strip():
+    def resolve_location(self, location: str) -> ResolvedLocation:
+        """Resolve a US city/state or latitude/longitude pair."""
+        requested = clean_text(location)
+        if not requested:
             raise WeatherClientError("Location must be a non-empty string")
 
-        selector = location.strip()
-        limit = self._bounded_int(limit, 1, 500)
-        radius_km = self._bounded_int(radius_km, 1, 200)
-        min_severity = self._bounded_int(min_severity, 1, 4)
+        match = _COORDINATE_PATTERN.match(requested)
+        if match:
+            latitude = float(match.group(1))
+            longitude = float(match.group(2))
+            self._validate_coordinates(latitude, longitude)
+            return ResolvedLocation(requested, requested, latitude, longitude)
 
-        params: dict[str, Any] = {
-            "_limit": limit,
-            "min-severity": min_severity,
-        }
-        query_latitude: float | None = None
-        query_longitude: float | None = None
+        cache_key = requested.casefold()
+        if cache_key in self._geocode_cache:
+            return self._geocode_cache[cache_key]
 
-        coordinate_match = _COORDINATE_RE.match(selector)
-        if coordinate_match:
-            query_latitude = float(coordinate_match.group(1))
-            query_longitude = float(coordinate_match.group(2))
-            self._validate_coordinates(query_latitude, query_longitude)
-            params.update(
-                {
-                    "lat": query_latitude,
-                    "long": query_longitude,
-                    "dist": radius_km,
-                }
-            )
-        elif selector.casefold() != "all":
-            params["county"] = selector
+        elapsed = time.monotonic() - self._last_geocode_at
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
 
-        payload = self._get("/id/floods", params)
-        items = payload.get("items") or []
-        if not isinstance(items, list):
-            raise WeatherClientError("Environment Agency response has no valid items list")
+        results = self._get(
+            f"{self.geocoder_base_url}/search",
+            params={
+                "q": requested,
+                "format": "jsonv2",
+                "limit": 1,
+                "countrycodes": "us",
+                "addressdetails": 1,
+            },
+        )
+        self._last_geocode_at = time.monotonic()
+
+        if not isinstance(results, list) or not results:
+            raise WeatherClientError(f"Could not resolve location: {requested}")
+
+        result = results[0]
+        try:
+            latitude = float(result["lat"])
+            longitude = float(result["lon"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WeatherClientError(
+                f"Geocoder returned invalid coordinates for {requested}"
+            ) from exc
+
+        self._validate_coordinates(latitude, longitude)
+        resolved = ResolvedLocation(
+            requested=requested,
+            label=clean_text(result.get("display_name")) or requested,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        self._geocode_cache[cache_key] = resolved
+        return resolved
+
+    def get_point_metadata(self, latitude: float, longitude: float) -> dict[str, Any]:
+        self._validate_coordinates(latitude, longitude)
+        payload = self._get(
+            f"{self.nws_base_url}/points/{latitude:.4f},{longitude:.4f}"
+        )
+        if not isinstance(payload, dict):
+            raise WeatherClientError("NWS /points returned an unexpected response")
+        return payload
+
+    def get_active_alerts(
+        self, latitude: float, longitude: float
+    ) -> list[dict[str, Any]]:
+        payload = self._get(
+            f"{self.nws_base_url}/alerts/active",
+            params={"point": f"{latitude:.4f},{longitude:.4f}"},
+        )
+        if not isinstance(payload, dict):
+            return []
+        features = payload.get("features") or []
+        return [item for item in features if isinstance(item, dict)]
+
+    def get_forecast(self, point_metadata: dict[str, Any]) -> dict[str, Any]:
+        forecast_url = clean_text((point_metadata.get("properties") or {}).get("forecast"))
+        if not forecast_url:
+            raise WeatherClientError("NWS /points response did not include forecast URL")
+        payload = self._get(forecast_url)
+        if not isinstance(payload, dict):
+            raise WeatherClientError("NWS forecast returned an unexpected response")
+        return payload
+
+    def fetch_documents(self, location: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Collect and normalise active alerts and forecast periods."""
+        limit = max(1, min(int(limit), 200))
+        resolved = self.resolve_location(location)
+        point_metadata = self.get_point_metadata(resolved.latitude, resolved.longitude)
+        alerts = self.get_active_alerts(resolved.latitude, resolved.longitude)
+        forecast = self.get_forecast(point_metadata)
 
         documents: list[dict[str, Any]] = []
-        for item in items[:limit]:
-            if not isinstance(item, dict):
-                continue
-            document = self._normalise_warning(
-                item,
-                requested_location=selector,
-                query_latitude=query_latitude,
-                query_longitude=query_longitude,
-            )
+        for feature in alerts:
+            document = self._normalise_alert(feature, resolved)
             if document:
                 documents.append(document)
-        return documents
 
-    @staticmethod
-    def _clean_text(value: Any) -> str:
-        return " ".join(str(value or "").split()).strip()
+        periods = (forecast.get("properties") or {}).get("periods") or []
+        for period in periods:
+            if not isinstance(period, dict):
+                continue
+            document = self._normalise_forecast(period, forecast, resolved)
+            if document:
+                documents.append(document)
 
-    @staticmethod
-    def _stable_hash(*parts: str) -> str:
-        joined = "|".join(parts)
-        return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+        # Alerts appear first because urgent narratives should not be displaced
+        # by forecast periods when a small limit is requested.
+        return documents[:limit]
 
-    def _normalise_warning(
-        self,
-        item: dict[str, Any],
-        *,
-        requested_location: str,
-        query_latitude: float | None,
-        query_longitude: float | None,
+    def _normalise_alert(
+        self, feature: dict[str, Any], location: ResolvedLocation
     ) -> dict[str, Any] | None:
-        flood_area_id = self._clean_text(item.get("floodAreaID"))
-        source_url = self._clean_text(item.get("@id"))
-        description = self._clean_text(item.get("description"))
-        message = self._clean_text(item.get("message"))
-        severity = self._clean_text(item.get("severity")) or "Flood warning"
-        flood_area = item.get("floodArea") or {}
-        if not isinstance(flood_area, dict):
-            flood_area = {}
-        county = self._clean_text(flood_area.get("county") or item.get("county"))
-        river_or_sea = self._clean_text(flood_area.get("riverOrSea"))
-        ea_area_name = self._clean_text(item.get("eaAreaName"))
-        ea_region_name = self._clean_text(item.get("eaRegionName"))
-
-        try:
-            severity_level = int(item.get("severityLevel"))
-        except (TypeError, ValueError):
-            severity_level = None
-
-        narrative_parts = [
-            f"Severity: {severity}.",
-            f"Flood area: {description}." if description else "",
-            f"County: {county}." if county else "",
-            f"River or sea: {river_or_sea}." if river_or_sea else "",
-            f"Environment Agency area: {ea_area_name}." if ea_area_name else "",
-            f"Region: {ea_region_name}." if ea_region_name else "",
-            message,
-        ]
-        narrative_text = "\n\n".join(part for part in narrative_parts if part)
+        properties = feature.get("properties") or {}
+        description = clean_text(properties.get("description"))
+        instruction = clean_text(properties.get("instruction"))
+        narrative_text = "\n\n".join(
+            part for part in (description, instruction) if part
+        )
         if not narrative_text:
             return None
 
-        source_key = flood_area_id or source_url
-        if not source_key:
-            source_key = self._stable_hash(
-                description,
-                severity,
-                self._clean_text(item.get("timeRaised")),
+        source_id = clean_text(feature.get("id") or properties.get("id"))
+        if not source_id:
+            source_id = stable_hash(
+                location.label,
+                clean_text(properties.get("event")),
+                clean_text(properties.get("sent") or properties.get("effective")),
                 narrative_text,
             )
 
-        location = description or county or requested_location or "England"
-        headline = f"{severity}: {location}" if location else severity
+        headline = clean_text(
+            properties.get("headline")
+            or properties.get("event")
+            or "NWS weather alert"
+        )
 
         return {
-            "id": f"ea-flood:{source_key}",
-            "location": location,
-            "county": county or None,
-            "query_latitude": query_latitude,
-            "query_longitude": query_longitude,
+            "id": f"nws-alert:{source_id}",
+            "location": location.label,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
             "source_type": "alert",
             "headline": headline,
             "narrative_text": narrative_text,
-            "severity": severity,
-            "severity_level": severity_level,
-            "flood_area_id": flood_area_id or None,
-            "river_or_sea": river_or_sea or None,
-            "ea_area_name": ea_area_name or None,
-            "ea_region_name": ea_region_name or None,
-            "source_url": source_url or None,
-            "issued_at": item.get("timeRaised"),
-            "effective_at": item.get("timeMessageChanged")
-            or item.get("timeSeverityChanged"),
-            "payload": item,
+            "issued_at": properties.get("sent") or properties.get("onset"),
+            "effective_at": properties.get("effective") or properties.get("onset"),
+            "payload": feature,
+        }
+
+    def _normalise_forecast(
+        self,
+        period: dict[str, Any],
+        forecast: dict[str, Any],
+        location: ResolvedLocation,
+    ) -> dict[str, Any] | None:
+        detailed_forecast = clean_text(period.get("detailedForecast"))
+        if not detailed_forecast:
+            return None
+
+        period_name = clean_text(period.get("name")) or "Forecast"
+        start_time = clean_text(period.get("startTime"))
+        forecast_id = stable_hash(
+            f"{location.latitude:.4f}",
+            f"{location.longitude:.4f}",
+            start_time,
+            period_name,
+        )
+        generated_at = (forecast.get("properties") or {}).get("generatedAt")
+
+        return {
+            "id": f"nws-forecast:{forecast_id}",
+            "location": location.label,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "source_type": "forecast",
+            "headline": period_name,
+            "narrative_text": detailed_forecast,
+            "issued_at": generated_at or forecast.get("updated"),
+            "effective_at": period.get("startTime"),
+            "payload": period,
         }

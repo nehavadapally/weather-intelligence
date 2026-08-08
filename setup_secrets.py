@@ -1,29 +1,31 @@
-"""Create/update the Lakebase connection secret used by the Databricks App."""
+"""Create/update the Lakebase URL secret used by the app and notebook.
+
+The National Weather Service API does not require an API key or secret.
+"""
 
 import getpass
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.errors import ResourceAlreadyExists
 from databricks.sdk.service import workspace
 
-SCOPE = "database"
-KEY = "lakebase-url"
+w = WorkspaceClient()
 
-client = WorkspaceClient()
 try:
-    client.secrets.create_scope(scope=SCOPE)
-    print(f"Created secret scope: {SCOPE}")
-except ResourceAlreadyExists:
-    print(f"Secret scope already exists: {SCOPE}")
+    w.secrets.create_scope(scope="database")
+except Exception:
+    # The scope may already exist.
+    pass
 
-client.secrets.put_secret(
-    scope=SCOPE,
-    key=KEY,
-    string_value=getpass.getpass("Paste the Lakebase PostgreSQL URL: "),
+w.secrets.put_secret(
+    scope="database",
+    key="lakebase-url",
+    string_value=getpass.getpass("Paste your Lakebase PostgreSQL URL: "),
 )
-client.secrets.put_acl(
-    scope=SCOPE,
+
+w.secrets.put_acl(
+    scope="database",
     principal="users",
     permission=workspace.AclPermission.READ,
 )
-print(f"Stored secret {SCOPE}/{KEY}")
+
+print("Stored secret: database/lakebase-url")
