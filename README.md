@@ -1,145 +1,433 @@
-# Homework 2: NWS Weather Intelligence
+# Homework 2: Weather Intelligence with Databricks Lakebase
 
-This project adapts the Databricks Day 2 Lakebase application pattern from a
-stock watchlist and news search experience to weather ingestion and semantic
-retrieval.
+## 1. Project Overview
 
-## User interface
+This project uses **Databricks Lakebase** and **pgvector** to store and search weather alerts and forecasts.
 
-The Flask app has two tabs.
-
-### 1. My Locations
-
-The user searches for a US location in `City, ST` format, for example:
+### Pipeline
 
 ```text
-New York, NY
-Chicago, IL
-Austin, TX
-```
-
-The suggestions come from the application's built-in catalogue of US state
-capitals and major cities. Selecting one of these suggestions avoids a public
-geocoder request.
-
-Submitting the form calls the required endpoint:
-
-```http
+National Weather Service API
+            ↓
+Databricks App
 POST /weather/sync
+            ↓
+Lakebase: weather_documents
+            ↓
+Databricks Embedding Notebook
+            ↓
+Lakebase: weather_embeddings
+            ↓
+Databricks App
+POST /weather/search
+            ↓
+Search Results
 ```
 
-After the sync, the location appears in a table showing:
+The application has two main tabs:
 
-- alert count;
-- forecast count;
-- total stored weather documents;
-- latest sync time.
+* **My Locations** – Add, sync, refresh, and delete US locations.
+* **Vector Search** – Search weather alerts and forecasts using natural-language questions.
 
-The list is derived from `weather_documents`, so no additional watchlist table
-is required and the locations remain visible after a page refresh.
-
-### 2. Vector Search
-
-The user enters a natural-language question, such as:
+Screenshots and other submission evidence are stored in:
 
 ```text
-flash flood risk this weekend
+evidence/
 ```
 
-The interface calls the required endpoint:
+---
 
-```http
-POST /weather/search
+# 2. Data Source
+
+The project uses the **US National Weather Service (NWS) API**.
+
+The NWS API was selected because it:
+
+* Is public.
+* Does not require an API key.
+* Provides active weather alerts.
+* Provides detailed forecasts.
+* Provides text suitable for embeddings.
+* Provides timestamps and location information.
+
+The application collects:
+
+* Weather alerts.
+* Alert descriptions and instructions.
+* Forecast information.
+* Forecast periods and timestamps.
+
+> The NWS API only covers the United States and its territories.
+
+---
+
+# 3. Databricks Architecture
+
+The project uses these Databricks components:
+
+| Component             | Purpose                                            |
+| --------------------- | -------------------------------------------------- |
+| Databricks Git Folder | Stores application, SQL, notebook, and other files |
+| Lakebase              | Stores weather documents and embeddings            |
+| Databricks Secrets    | Stores the Lakebase connection URL                 |
+| Databricks Notebook   | Creates text chunks and embeddings                 |
+| Databricks App        | Provides the UI and REST API                       |
+| Model Serving         | Optional AI summary of search results              |
+
+---
+
+# 4. Database Tables
+
+The project uses two Lakebase tables.
+
+## `weather_documents`
+
+Stores the original weather information.
+
+| Column           | Purpose                         |
+| ---------------- | ------------------------------- |
+| `id`             | Unique document ID              |
+| `location`       | Location such as `New York, NY` |
+| `latitude`       | Location latitude               |
+| `longitude`      | Location longitude              |
+| `source_type`    | `alert` or `forecast`           |
+| `headline`       | Alert or forecast title         |
+| `narrative_text` | Main weather text               |
+| `issued_at`      | Issue time                      |
+| `effective_at`   | Effective time                  |
+| `payload`        | Original NWS JSON data          |
+| `synced_at`      | Last sync time                  |
+
+The application uses stable IDs and `ON CONFLICT` upserts to prevent duplicate records.
+
+## `weather_embeddings`
+
+Stores text chunks and their vector embeddings.
+
+| Column         | Purpose                  |
+| -------------- | ------------------------ |
+| `id`           | Unique embedding ID      |
+| `document_id`  | Related weather document |
+| `chunk_index`  | Chunk position           |
+| `chunk_text`   | Text used for search     |
+| `content_hash` | Detects changed text     |
+| `embedding`    | 384-dimensional vector   |
+| `model_name`   | Embedding model          |
+| `created_at`   | Creation time            |
+
+The relationship uses:
+
+```sql
+ON DELETE CASCADE
 ```
 
-The user can optionally filter by:
+Therefore, deleting a weather document also deletes its embeddings.
 
-- stored location;
-- `alert` or `forecast`;
-- number of results from 1 to 20.
+---
 
-The results show the location, source type, headline, effective time, retrieved
-chunk and cosine-similarity score.
+# 5. Embedding Configuration
 
-The interface intentionally says **weather alerts and forecasts**, not
-**weather news**. The current ingestion pipeline does not load an external news
-source. Adding weather news would be a separate multi-source stretch goal.
+The embedding notebook uses:
 
-## Homework 2 requirement mapping
+| Setting          | Value                                    |
+| ---------------- | ---------------------------------------- |
+| Chunk size       | 800 characters                           |
+| Chunk overlap    | 100 characters                           |
+| Model            | `sentence-transformers/all-MiniLM-L6-v2` |
+| Vector size      | 384                                      |
+| Database library | `psycopg2`                               |
+| Batch insert     | `execute_values`                         |
+| Vector index     | HNSW                                     |
+| Distance         | Cosine distance                          |
 
-| Homework requirement | Implementation |
-|---|---|
-| Harvest unstructured weather text | `weather_client.py` |
-| Resolve locations and fetch NWS content | `NWSWeatherClient` |
-| Normalised raw-document table | `weather_documents` |
-| Required sync endpoint | `POST /weather/sync` |
-| Chunk at 800 with overlap 100 | `text_utils.py` and ingestion notebook |
-| MiniLM 384-dimensional vectors | `all-MiniLM-L6-v2` |
-| psycopg2 vector writes | embedding notebook with `%s::vector` |
-| pgvector HNSW index | `sql/02_setup_weather_embeddings_table.sql` |
-| Required retrieval endpoint | `POST /weather/search` |
-| Query model loaded once | singleton in `app.py` |
-| Missing query and `top_k` bounds | handled in `app.py` |
-| Empty embedding table | explanatory empty-state response |
-| Data-source and schema documentation | this README |
+The same embedding model is used for:
 
-The new UI endpoints are additive and do not change the required request
-contracts.
+* Weather documents.
+* User search queries.
 
-## API endpoints
+---
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `GET` | `/healthz` | Health check |
-| `GET` | `/weather/location-options` | Supported city/state suggestions |
-| `GET` | `/weather/locations` | Stored-location summary for the first tab |
-| `POST` | `/weather/sync` | Required weather ingestion endpoint |
-| `GET` | `/weather/documents` | Inspect raw weather documents |
-| `POST` | `/weather/search` | Required vector-search endpoint |
-| `GET` | `/weather/search` | Optional browser-friendly variant |
+# 6. Project Files
 
-## Required pipeline
+The main project structure is:
 
-### 1. Create the tables
+```text
+weather-intelligence/
+├── app.py
+├── app.yaml
+├── lakebase.py
+├── weather_client.py
+├── weather_sync.py
+├── llm_summary.py
+├── text_utils.py
+├── notebooks/
+│   └── ingest_weather_embeddings.ipynb
+├── sql/
+│   ├── 01_setup_weather_documents_tables.sql
+│   └── 02_setup_weather_embeddings_table.sql
+├── templates/
+│   └── index.html
+└── evidence/
+```
 
-Run:
+---
+
+# 7. Run the Project in Databricks
+
+## Step 1: Open the Git Repository
+
+Open **Workspace → Git Folders** in Databricks and clone the project repository.
+
+```text
+https://github.com/nehavadapally/weather-intelligence.git
+```
+
+---
+
+## Step 2: Create Lakebase
+
+Create a Databricks Lakebase PostgreSQL database.
+
+The connection URL has this format:
+
+```text
+postgresql://username:password@host:5432/database?sslmode=require
+```
+
+Do not commit this connection string or password to GitHub.
+
+---
+
+## Step 3: Configure Databricks Secrets
+
+Create a Databricks secret:
+
+```text
+Scope: database
+Key: lakebase-url
+```
+
+The application uses:
+
+```text
+LAKEBASE_SECRET_SCOPE=database
+LAKEBASE_SECRET_KEY=lakebase-url
+```
+
+For local testing, the connection can also be provided using:
+
+```text
+LAKEBASE_URL
+```
+
+---
+
+## Step 4: Create the Lakebase Tables
+
+Run the SQL files in this order:
 
 ```text
 sql/01_setup_weather_documents_tables.sql
 sql/02_setup_weather_embeddings_table.sql
 ```
 
-### 2. Sync weather text
+The second file:
 
-Through the UI or directly:
+* Enables pgvector.
+* Creates `weather_embeddings`.
+* Creates `VECTOR(384)`.
+* Creates the HNSW vector index.
 
-```bash
-curl -X POST http://localhost:8000/weather/sync \
-  -H "Content-Type: application/json" \
-  -d '{"locations":["New York, NY"],"limit":50}'
+Check that the tables exist:
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_name IN (
+    'weather_documents',
+    'weather_embeddings'
+);
 ```
 
-### 3. Generate embeddings
+---
 
-Run:
+# 8. Deploy the Databricks App
+
+Create a **Databricks App** using the project Git folder.
+
+The application is configured through:
+
+```text
+app.yaml
+```
+
+The application starts with:
+
+```text
+python app.py
+```
+
+The main API endpoints are:
+
+```text
+GET  /healthz
+POST /weather/sync
+POST /weather/search
+```
+
+After deployment, open the Databricks App URL.
+
+Check:
+
+```text
+https://<databricks-app-url>/healthz
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+# 9. Sync Weather Data
+
+Open the **My Locations** tab.
+
+Enter a US location using:
+
+```text
+City, ST
+```
+
+Example:
+
+```text
+New York, NY
+```
+
+Click **Add and Sync Location**.
+
+The application calls:
+
+```text
+POST /weather/sync
+```
+
+Example request:
+
+```json
+{
+  "locations": ["New York, NY"],
+  "limit": 50
+}
+```
+
+The sync process:
+
+1. Finds the location coordinates.
+2. Calls the NWS API.
+3. Gets alerts and forecasts.
+4. Converts the data into a standard format.
+5. Saves the data in `weather_documents`.
+
+Check the stored data:
+
+```sql
+SELECT
+    id,
+    location,
+    source_type,
+    headline,
+    synced_at
+FROM weather_documents
+ORDER BY synced_at DESC;
+```
+
+---
+
+# 10. Create Embeddings
+
+Open:
 
 ```text
 notebooks/ingest_weather_embeddings.ipynb
 ```
 
-The notebook reads `weather_documents`, chunks changed text, creates
-384-dimensional MiniLM vectors and writes them to `weather_embeddings` with
-psycopg2.
+Run the notebook from top to bottom.
 
-### 4. Search
+The notebook:
 
-```bash
-curl -X POST http://localhost:8000/weather/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"flash flood risk this weekend","top_k":5}'
+1. Connects to Lakebase.
+2. Reads `weather_documents`.
+3. Finds new or changed documents.
+4. Splits text into 800-character chunks.
+5. Uses 100-character overlap.
+6. Creates embeddings using MiniLM.
+7. Stores the vectors in `weather_embeddings`.
+8. Removes old chunks when source text changes.
+
+The notebook uses `psycopg2`.
+
+Do not uninstall the Databricks-provided `psycopg2`.
+
+Check the embedding data:
+
+```sql
+SELECT
+    COUNT(*) AS embedding_rows,
+    COUNT(DISTINCT document_id) AS embedded_documents
+FROM weather_embeddings;
 ```
 
-Optional filters used by the interface:
+---
+
+# 11. Vector Search
+
+Open the **Vector Search** tab.
+
+Enter a question such as:
+
+```text
+risk of flooding near rivers
+```
+
+The application calls:
+
+```text
+POST /weather/search
+```
+
+Example request:
+
+```json
+{
+  "query": "risk of flooding near rivers",
+  "top_k": 5
+}
+```
+
+The search process:
+
+1. Creates an embedding for the question.
+2. Searches the stored weather vectors.
+3. Calculates cosine similarity.
+4. Returns the most relevant weather passages.
+
+`top_k` is limited to 1–20 results.
+
+### Optional Filters
+
+Search can also be filtered by:
+
+* Location.
+* Alert or forecast.
+* Number of results.
+
+Example:
 
 ```json
 {
@@ -151,19 +439,92 @@ Optional filters used by the interface:
 }
 ```
 
-## Important terminology
+---
 
-This application retrieves **weather documents**, meaning NWS alert and
-forecast text. It does not retrieve general media news articles.
+# 12. Refresh and Delete Locations
 
-## Known limitations
+## Refresh
 
-- NWS covers the United States and its territories.
-- The built-in city suggestions cover state capitals and major cities, not
-  every US settlement.
-- A city outside the built-in catalogue may fall back to Nominatim, which can
-  block shared cloud IP addresses.
-- Newly synced documents are searchable only after the embedding notebook is
-  run.
-- The optional AI summary requires `SUMMARY_MODEL_ENDPOINT`; it is disabled by
-  default.
+Click **Sync** for an existing location.
+
+This updates the weather documents.
+
+After syncing new or changed documents, run the embedding notebook again so the new information becomes searchable.
+
+## Delete
+
+Click **Delete** for a location.
+
+The deletion works like this:
+
+```text
+Delete weather documents
+          ↓
+ON DELETE CASCADE
+          ↓
+Delete related embeddings
+          ↓
+Remove location from the UI
+```
+
+---
+
+# 13. Optional AI Summary
+
+The application can optionally generate an AI summary of search results using **Databricks Model Serving**.
+
+To enable it, configure the serving endpoint in `app.yaml`:
+
+```yaml
+- name: SUMMARY_MODEL_ENDPOINT
+  value: "your-serving-endpoint-name"
+```
+
+The Databricks App must have permission to query the Model Serving endpoint.
+
+If Model Serving is unavailable, normal vector-search results still work.
+
+---
+
+# 14. Known Limitations
+
+* NWS data is limited to the US and its territories.
+* The built-in location list does not contain every US location.
+* Some unknown locations may use Nominatim geocoding.
+* Newly synced documents must be embedded before they can be searched.
+* Active alert counts change with current weather conditions.
+* The first embedding run may take longer because the model needs to download.
+* AI summaries require a working Model Serving endpoint.
+* This project is for learning and should not replace official emergency warnings.
+
+---
+
+# 15. Future Improvements
+
+Possible improvements include:
+
+* Schedule weather sync using a Databricks Job.
+* Automatically run embeddings after syncing.
+* Create a workflow:
+
+```text
+Sync Weather
+     ↓
+Create Embeddings
+     ↓
+Validate Data
+     ↓
+Notify on Failure
+```
+
+Other improvements could include:
+
+* Hourly forecasts.
+* Additional weather data sources.
+* Authentication.
+* Per-user saved locations.
+* Recency-based search ranking.
+* Monitoring and dashboards.
+* Automated API tests.
+* Performance comparison between HNSW and exact vector search.
+---
