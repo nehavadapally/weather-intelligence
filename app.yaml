@@ -1,0 +1,21 @@
+command:
+  - "python"
+  - "app.py"
+
+env:
+  - name: LAKEBASE_SECRET_SCOPE
+    value: "database"
+  - name: LAKEBASE_SECRET_KEY
+    value: "lakebase-url"
+  - name: EA_FLOOD_API_BASE_URL
+    value: "https://environment.data.gov.uk/flood-monitoring"
+  - name: WEATHER_USER_AGENT
+    value: "databricks-weather-intelligence-homework/1.0"
+  - name: WEATHER_DOCUMENTS_TABLE_NAME
+    value: "weather_documents"
+  - name: WEATHER_EMBEDDINGS_TABLE_NAME
+    value: "weather_embeddings"
+  - name: WEATHER_LOCATIONS
+    value: "all"
+  - name: WEATHER_EMBEDDING_MODEL
+    value: "sentence-transformers/all-MiniLM-L6-v2"
