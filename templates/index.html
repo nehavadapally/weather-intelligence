@@ -13,12 +13,16 @@
     .card { background: white; border: 1px solid #dfe5ec; border-radius: 12px; padding: 22px; box-shadow: 0 2px 8px rgba(20,34,55,.05); }
     label { display: block; font-weight: 700; margin: 14px 0 6px; }
     input, select, button { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #bbc6d2; font-size: 15px; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .checkbox-row input { width: auto; }
+    .checkbox-row label { margin: 0; font-weight: 400; }
     button { margin-top: 18px; background: #0b5cab; color: white; border: 0; font-weight: 700; cursor: pointer; }
     button:disabled { opacity: .6; cursor: wait; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f8fb; border-radius: 8px; padding: 12px; min-height: 48px; }
+    .summary { background: #eaf2fc; border: 1px solid #cfe0f5; border-radius: 8px; padding: 12px 14px; margin-top: 12px; line-height: 1.5; }
+    .summary-label { font-weight: 700; color: #0b5cab; display: block; margin-bottom: 4px; }
     .result { border-top: 1px solid #e2e7ed; padding: 14px 0; }
     .score { font-weight: 700; color: #0b5cab; }
-    a { color: #0b5cab; }
   </style>
 </head>
 <body>
@@ -50,9 +54,22 @@
         <label for="top-k">Number of results</label>
         <input id="top-k" type="number" min="1" max="20" value="5">
 
+        <label for="source-type">Source type</label>
+        <select id="source-type">
+          <option value="">Any (alerts + forecasts)</option>
+          <option value="alert">Alerts only</option>
+          <option value="forecast">Forecasts only</option>
+        </select>
+
+        <div class="checkbox-row">
+          <input id="summarize" type="checkbox" checked>
+          <label for="summarize">Include AI-generated summary (adds a model-serving call)</label>
+        </div>
+
         <button id="search-button" type="submit">Search weather documents</button>
       </form>
       <pre id="search-output"></pre>
+      <div id="summary"></div>
       <div id="results"></div>
     </section>
   </div>
@@ -66,6 +83,7 @@
   const searchForm = document.getElementById('search-form');
   const searchButton = document.getElementById('search-button');
   const searchOutput = document.getElementById('search-output');
+  const summaryBox = document.getElementById('summary');
   const results = document.getElementById('results');
 
   syncForm.addEventListener('submit', async (event) => {
@@ -95,37 +113,49 @@
     event.preventDefault();
     searchButton.disabled = true;
     searchOutput.textContent = 'Searching...';
+    summaryBox.replaceChildren();
     results.replaceChildren();
     try {
       const response = await fetch('/weather/search', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           query: document.getElementById('query').value,
-          top_k: Number(document.getElementById('top-k').value)
+          top_k: Number(document.getElementById('top-k').value),
+          source_type: document.getElementById('source-type').value || null,
+          summarize: document.getElementById('summarize').checked
         })
       });
       const data = await response.json();
+      if (!response.ok) {
+        searchOutput.textContent = data.error || `Request failed (${response.status})`;
+        return;
+      }
       searchOutput.textContent = data.message || `Found ${data.count || 0} results.`;
+
+      if (data.summary) {
+        const box = document.createElement('div');
+        box.className = 'summary';
+        const label = document.createElement('span');
+        label.className = 'summary-label';
+        label.textContent = 'AI summary';
+        const text = document.createElement('span');
+        text.textContent = data.summary;
+        box.append(label, text);
+        summaryBox.append(box);
+      }
+
       for (const item of (data.results || [])) {
         const wrapper = document.createElement('article');
         wrapper.className = 'result';
         const title = document.createElement('h3');
-        title.textContent = item.headline || 'Flood warning';
+        title.textContent = item.headline || 'Weather update';
         const meta = document.createElement('p');
         meta.className = 'muted';
         const score = Number(item.similarity || 0).toFixed(3);
-        meta.textContent = `${item.location || 'USA'} | ${item.source_type || 'Weather'} | similarity ${score}`;
+        meta.textContent = `${item.location || 'USA'} | ${item.source_type || 'weather'} | similarity ${score}`;
         const text = document.createElement('p');
         text.textContent = item.chunk_text || '';
         wrapper.append(title, meta, text);
-        if (item.source_url) {
-          const link = document.createElement('a');
-          link.href = item.source_url;
-          link.target = '_blank';
-          link.rel = 'noopener';
-          link.textContent = 'Open source warning';
-          wrapper.append(link);
-        }
         results.append(wrapper);
       }
     } catch (error) {

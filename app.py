@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+from typing import Any
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, render_template
-from psycopg2.extras import execute_values
+from flask import Flask, jsonify, render_template, request
 from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
 import lakebase
-from weather_client import NWSWeatherClient, WeatherClientError
+from llm_summary import summarize_search_results
+from weather_sync import run_weather_sync
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nws-weather-intelligence")
@@ -23,14 +23,12 @@ app = Flask(__name__)
 
 DOCUMENTS_TABLE = os.environ.get("WEATHER_DOCUMENTS_TABLE_NAME", "weather_documents")
 EMBEDDINGS_TABLE = os.environ.get("WEATHER_EMBEDDINGS_TABLE_NAME", "weather_embeddings")
-MODEL_NAME = os.environ.get(
-    "WEATHER_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
-)
-DEFAULT_LOCATIONS = [
-    value.strip()
-    for value in os.environ.get("WEATHER_LOCATIONS", "Chicago, IL;Austin, TX").split(";")
-    if value.strip()
-]
+MODEL_NAME = os.environ.get("WEATHER_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+# locations/limit defaults for /weather/sync live in weather_sync.py (shared
+# with the scheduled job) - nothing to duplicate here.
+
+_ALLOWED_SOURCE_TYPES = (None, "alert", "forecast")
 
 _embedding_model: SentenceTransformer | None = None
 
@@ -44,148 +42,35 @@ def get_embedding_model() -> SentenceTransformer:
     return _embedding_model
 
 
-def _upsert_weather_documents(documents: list[dict]) -> int:
-    """Upsert normalised NWS documents with one batched psycopg2 write."""
-    if not documents:
-        return 0
-
-    rows = [
-        (
-            item["id"],
-            item["location"],
-            item.get("latitude"),
-            item.get("longitude"),
-            item["source_type"],
-            item["headline"],
-            item["narrative_text"],
-            item.get("issued_at"),
-            item.get("effective_at"),
-            json.dumps(item["payload"]),
-        )
-        for item in documents
-    ]
-
-    with lakebase.get_connection() as conn:
-        with conn.cursor() as cur:
-            execute_values(
-                cur,
-                f"""
-                INSERT INTO {DOCUMENTS_TABLE} (
-                    id, location, latitude, longitude, source_type,
-                    headline, narrative_text, issued_at, effective_at,
-                    payload, synced_at
-                ) VALUES %s
-                ON CONFLICT (id) DO UPDATE SET
-                    location = EXCLUDED.location,
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    source_type = EXCLUDED.source_type,
-                    headline = EXCLUDED.headline,
-                    narrative_text = EXCLUDED.narrative_text,
-                    issued_at = EXCLUDED.issued_at,
-                    effective_at = EXCLUDED.effective_at,
-                    payload = EXCLUDED.payload,
-                    synced_at = now()
-                WHERE {DOCUMENTS_TABLE}.narrative_text IS DISTINCT FROM EXCLUDED.narrative_text
-                   OR {DOCUMENTS_TABLE}.headline IS DISTINCT FROM EXCLUDED.headline
-                   OR {DOCUMENTS_TABLE}.payload IS DISTINCT FROM EXCLUDED.payload
-                """,
-                rows,
-                template=(
-                    "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, now())"
-                ),
-                page_size=100,
-            )
-            conn.commit()
-    return len(documents)
+class SearchParamError(ValueError):
+    """Invalid /weather/search input; str(exc) is safe to return to the client."""
 
 
-@app.get("/")
-def index():
-    """Serve the main HTML interface."""
-    return render_template("index.html")
-
-
-@app.get("/healthz")
-def healthz():
-    return jsonify({"status": "ok"})
-
-
-@app.post("/weather/sync")
-def weather_sync():
-    """Harvest NWS alerts and forecasts and upsert them into Lakebase.
-
-    Body: {"locations": ["Chicago, IL", "Austin, TX"], "limit": 50}
-    """
-    body = request.get_json(silent=True) or {}
-    locations = body.get("locations") or DEFAULT_LOCATIONS
-    limit = max(1, min(int(body.get("limit", 50)), 200))
-
-    if not isinstance(locations, list) or not locations:
-        return jsonify({"error": "locations must be a non-empty list"}), 400
-
-    client = NWSWeatherClient()
-    documents_by_id: dict[str, dict] = {}
-    errors: list[dict[str, str]] = []
-
-    for location in locations:
-        if not isinstance(location, str) or not location.strip():
-            errors.append({"location": str(location), "error": "Invalid location"})
-            continue
-        try:
-            for document in client.fetch_documents(location, limit=limit):
-                documents_by_id[document["id"]] = document
-        except WeatherClientError as exc:
-            errors.append({"location": location, "error": str(exc)})
-
-    documents = list(documents_by_id.values())
-    synced = _upsert_weather_documents(documents)
-    return jsonify(
-        {
-            "synced": synced,
-            "unique_documents": len(documents),
-            "locations": locations,
-            "errors": errors,
-        }
-    )
-
-
-@app.get("/weather/documents")
-def weather_documents():
-    limit = max(1, min(int(request.args.get("limit", 50)), 200))
-    rows = lakebase.run_query(
-        f"""
-        SELECT id, location, latitude, longitude, source_type, headline,
-               narrative_text, issued_at, effective_at, synced_at
-        FROM {DOCUMENTS_TABLE}
-        ORDER BY synced_at DESC
-        LIMIT %s
-        """,
-        (limit,),
-    )
-    return jsonify(rows)
-
-
-@app.post("/weather/search")
-def weather_search():
-    """Embed a query and rank weather chunks with cosine similarity."""
-    body = request.get_json(silent=True) or {}
-    query = str(body.get("query") or "").strip()
+def _parse_search_params(query: Any, top_k: Any, source_type: Any) -> tuple[str, int, str | None]:
+    """Validate + normalize search params. Shared by the POST (JSON body) and
+    GET (query string) routes so the two don't drift out of sync."""
+    query = str(query or "").strip()
     if not query:
-        return jsonify({"error": "query is required"}), 400
+        raise SearchParamError("query is required")
 
     try:
-        top_k = int(body.get("top_k", 5))
+        top_k = int(top_k) if top_k not in (None, "") else 5
     except (TypeError, ValueError):
-        return jsonify({"error": "top_k must be an integer"}), 400
+        raise SearchParamError("top_k must be an integer")
     top_k = max(1, min(top_k, 20))
 
-    source_type = body.get("source_type")
-    if source_type not in (None, "alert", "forecast"):
-        return jsonify({"error": "source_type must be alert or forecast"}), 400
+    source_type = source_type or None
+    if source_type not in _ALLOWED_SOURCE_TYPES:
+        raise SearchParamError("source_type must be alert or forecast")
 
+    return query, top_k, source_type
+
+
+def _search_weather_chunks(query: str, top_k: int, source_type: str | None) -> list[dict]:
+    """Core pgvector cosine-similarity retrieval. Shared by the POST and GET
+    /weather/search routes so the SQL only exists in one place."""
     vector = get_embedding_model().encode(query).tolist()
-    vector_literal = "[" + ",".join(str(float(value)) for value in vector) + "]"
+    vector_literal = lakebase.vector_literal(vector)
 
     source_clause = "AND d.source_type = %s" if source_type else ""
     params: list[object] = [vector_literal, MODEL_NAME]
@@ -193,7 +78,7 @@ def weather_search():
         params.append(source_type)
     params.extend([vector_literal, top_k])
 
-    rows = lakebase.run_query(
+    return lakebase.run_query(
         f"""
         SELECT d.id,
                d.location,
@@ -217,19 +102,111 @@ def weather_search():
         tuple(params),
     )
 
-    return jsonify(
-        {
-            "query": query,
-            "top_k": top_k,
-            "count": len(rows),
-            "results": rows,
-            "message": (
-                None
-                if rows
-                else "No embeddings found. Run /weather/sync and then the embedding notebook."
-            ),
-        }
+
+def _search_response(query: str, top_k: int, rows: list[dict], summary: str | None) -> dict:
+    """Shape the JSON body returned by both /weather/search routes."""
+    return {
+        "query": query,
+        "top_k": top_k,
+        "count": len(rows),
+        "results": rows,
+        "summary": summary,
+        "message": (
+            None
+            if rows
+            else "No embeddings found. Run /weather/sync and then the embedding notebook."
+        ),
+    }
+
+
+@app.get("/")
+def index():
+    """Serve the main HTML interface."""
+    return render_template("index.html")
+
+
+@app.get("/healthz")
+def healthz():
+    return jsonify({"status": "ok"})
+
+
+@app.post("/weather/sync")
+def weather_sync():
+    """Harvest NWS alerts and forecasts and upsert them into Lakebase.
+
+    Body: {"locations": ["Chicago, IL", "Austin, TX"], "limit": 50}
+    Same logic runs on a schedule via jobs/scheduled_weather_sync.py.
+    """
+    body = request.get_json(silent=True) or {}
+    try:
+        result = run_weather_sync(body.get("locations"), body.get("limit", 50))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+@app.get("/weather/documents")
+def weather_documents():
+    limit = max(1, min(int(request.args.get("limit", 50)), 200))
+    rows = lakebase.run_query(
+        f"""
+        SELECT id, location, latitude, longitude, source_type, headline,
+               narrative_text, issued_at, effective_at, synced_at
+        FROM {DOCUMENTS_TABLE}
+        ORDER BY synced_at DESC
+        LIMIT %s
+        """,
+        (limit,),
     )
+    return jsonify(rows)
+
+
+@app.post("/weather/search")
+def weather_search():
+    """Embed a query and rank weather chunks with cosine similarity.
+
+    Body: {"query": "...", "top_k": 5, "source_type": "alert"|"forecast",
+           "summarize": false}
+    `summarize` defaults to false here (unlike the GET variant below) so the
+    default JSON contract stays exactly what the assignment specified -
+    pass it explicitly to also get an LLM-generated summary.
+    """
+    body = request.get_json(silent=True) or {}
+    try:
+        query, top_k, source_type = _parse_search_params(
+            body.get("query"), body.get("top_k", 5), body.get("source_type")
+        )
+    except SearchParamError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    rows = _search_weather_chunks(query, top_k, source_type)
+    summary = summarize_search_results(query, rows) if body.get("summarize") else None
+    return jsonify(_search_response(query, top_k, rows, summary))
+
+
+@app.get("/weather/search")
+def weather_search_get():
+    """GET variant of /weather/search for simple browser/curl use, with an
+    LLM-generated natural-language summary of the top results by default
+    (basic RAG - see llm_summary.py).
+
+    GET /weather/search?query=flash+flood+risk&top_k=5&source_type=alert&summarize=false
+    Pass summarize=false to skip the LLM call and just get raw vector-search
+    results back faster.
+    """
+    args = request.args
+    try:
+        query, top_k, source_type = _parse_search_params(
+            args.get("query"), args.get("top_k", 5), args.get("source_type")
+        )
+    except SearchParamError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    summarize = args.get("summarize", "true").strip().lower() not in ("false", "0", "no")
+
+    rows = _search_weather_chunks(query, top_k, source_type)
+    summary = summarize_search_results(query, rows) if summarize else None
+    return jsonify(_search_response(query, top_k, rows, summary))
 
 
 @app.errorhandler(Exception)

@@ -77,3 +77,15 @@ def run_write(sql: str, params: tuple | dict | None = None) -> int:
             cur.execute(sql, params)
             conn.commit()
             return cur.rowcount
+
+
+def vector_literal(values: list[float]) -> str:
+    """Serialize a Python vector into pgvector's text input format.
+
+    e.g. [0.1, 0.2, 0.3] -> "[0.1,0.2,0.3]", for use with an explicit
+    ``%s::vector`` cast in SQL. Centralized here - both app.py (query
+    embeddings) and notebooks/ingest_weather_embeddings.ipynb (chunk
+    embeddings) need to serialize a vector the same way, and previously each
+    had its own copy of this one-liner.
+    """
+    return "[" + ",".join(str(float(value)) for value in values) + "]"
