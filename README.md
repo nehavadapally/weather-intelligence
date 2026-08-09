@@ -6,6 +6,10 @@ This submission converts the Weather Intelligence work from Homework 2 into a to
 
 The Homework 2 Flask application, Lakebase weather documents and vector embeddings can remain in the same repository. Homework 3 adds a separate `mcp_server/` Databricks App containing a thin FastMCP layer and a weather adapter responsible for all HTTP, parsing and recommendation logic.
 
+App URL: https://agent-weather-talker-7474645166709307.aws.databricksapps.com/
+
+Evidence at /mcp-evidence
+
 ## Architecture
 
 ```text
