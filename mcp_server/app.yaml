@@ -15,7 +15,7 @@ env:
     value: "https://nominatim.openstreetmap.org"
 
   - name: NWS_USER_AGENT
-    value: "weather-intelligence-mcp/1.0 (https://github.com/nehavadapally/weather-intelligence)"
+    value: "weather-intelligence-mcp/1.0 (your-email@example.com)"
 
   - name: WEATHER_HTTP_TIMEOUT
     value: "30"

@@ -139,3 +139,9 @@ def test_recommendation_applies_thresholds(monkeypatch) -> None:
     assert result["recommendation"]["bring_umbrella"] is True
     assert result["recommendation"]["bring_jacket"] is True
     assert result["evidence"]["maximum_precipitation_probability_percent"] == 60.0
+    assert "40% precipitation" in result["method"]
+    assert "15°C or below" in result["method"]
+    assert "8 m/s" in result["method"]
+    assert "70% precipitation" in result["method"]
+    assert "15 m/s" in result["method"]
+    assert result["source"] == "National Weather Service"

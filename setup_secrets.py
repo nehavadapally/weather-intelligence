@@ -18,18 +18,6 @@ except Exception:
 
 w.secrets.put_secret(
     scope="database",
-    key="alpaca-key-id",
-    string_value=getpass.getpass("Paste your key id ")
-)
-
-w.secrets.put_secret(
-    scope="database",
-    key="alpaca-secret-key",
-    string_value=getpass.getpass("Paste secret key ")
-)
-
-w.secrets.put_secret(
-    scope="database",
     key="lakebase-url",
     string_value=getpass.getpass("Paste your Lakebase PostgreSQL URL: "),
 )
